@@ -1,0 +1,106 @@
+# Checks every pull request. Only the Plan job signs in to Azure, with the read-only tf-plan identity.
+# The plan is posted as a summary of resource types and counts; full plans are never published.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  terraform:
+    name: Terraform checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+      - run: terraform fmt -check -recursive
+      - run: terraform -chdir=platform init -backend=false && terraform -chdir=platform validate
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+      - run: |
+          tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+          tflint --chdir=platform --config="$GITHUB_WORKSPACE/.tflint.hcl" --format compact
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install checkov==3.3.20
+      - run: checkov -d platform --framework terraform --quiet --compact
+
+  scripts:
+    name: Script tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest tests -q
+      - run: for t in tests/*.test.sh; do bash "$t"; done
+
+  leak:
+    name: Leak check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash scripts/leak-check.sh
+        env:
+          LEAK_BLOCKLIST: ${{ secrets.LEAK_BLOCKLIST }}
+
+  plan:
+    name: Plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    environment: plan
+    permissions:
+      contents: read
+      id-token: write       # OIDC token for azure/login, no secret involved
+      pull-requests: write  # the plan summary comment
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Terraform ignores TF_VAR_ values for variables that are not declared (yet), so this is safe before Task 7.
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_budget_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - name: Init
+        run: >
+          terraform -chdir=platform init
+          -backend-config="resource_group_name=${{ vars.TF_STATE_RG }}"
+          -backend-config="storage_account_name=${{ vars.TF_STATE_SA }}"
+      - name: Plan
+        run: |
+          terraform -chdir=platform plan -input=false -lock-timeout=5m -out=tfplan > /dev/null
+          terraform -chdir=platform show -json tfplan | python3 scripts/plan_summary.py > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body=$(printf '<!-- plan-summary -->\n### Terraform plan (platform)\n\n%s\n' "$(cat summary.md)")
+          id=$(gh api --paginate "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- plan-summary -->")) | .id' | head -n1)
+          if [[ -n "$id" ]]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" -R "${{ github.repository }}" --body "$body"
+          fi

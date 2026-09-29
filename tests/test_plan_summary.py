@@ -32,9 +32,9 @@ def test_counts_per_type_and_action():
         rc("azurerm_role_assignment", "e", ["delete"]),
     ]}
     out = plan_summary.summarise(plan)
-    assert "| `azurerm_management_group` | 2 |  |  |  |  |" in out
-    assert "| `azurerm_policy_definition` |  | 1 |  |  |  |" in out
-    assert "| `azurerm_role_assignment` |  |  | 1 | 1 |  |" in out
+    assert "| `azurerm_management_group` | 2 |  |  |  |  |  |" in out
+    assert "| `azurerm_policy_definition` |  | 1 |  |  |  |  |" in out
+    assert "| `azurerm_role_assignment` |  |  | 1 | 1 |  |  |" in out
     assert "Total: 2 to create, 1 to update, 1 to replace, 1 to delete" in out
 
 
@@ -47,3 +47,12 @@ def test_names_and_values_never_appear():
     for leaked in ("vendor_api_key", "SECRET-VENDOR-KEY", "hunter2"):
         assert leaked not in out
     assert "`azurerm_key_vault_secret`" in out
+
+
+def test_imports_are_counted():
+    change = rc("azurerm_management_group", "root", ["no-op"])
+    change["change"]["importing"] = {"id": "/providers/Microsoft.Management/managementGroups/secret-id"}
+    out = plan_summary.summarise({"resource_changes": [change]})
+    assert "| `azurerm_management_group` |  |  |  |  |  | 1 |" in out
+    assert "1 to import" in out
+    assert "secret-id" not in out

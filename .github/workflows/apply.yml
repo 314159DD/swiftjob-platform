@@ -1,0 +1,62 @@
+# Applies the platform layer after a merge to main, with the tf-platform identity and a required reviewer
+# on the platform environment. The plan output stays out of the public log.
+name: Apply
+
+on:
+  push:
+    branches: [main]
+    paths: ["platform/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: apply-platform
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply platform
+    runs-on: ubuntu-24.04
+    environment: platform
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_budget_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - run: >
+          terraform -chdir=platform init
+          -backend-config="resource_group_name=${{ vars.TF_STATE_RG }}"
+          -backend-config="storage_account_name=${{ vars.TF_STATE_SA }}"
+      - name: Plan
+        run: |
+          terraform -chdir=platform plan -input=false -lock-timeout=5m -out=tfplan > /dev/null
+          terraform -chdir=platform show -json tfplan | python3 scripts/plan_summary.py >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply
+        run: terraform -chdir=platform apply -input=false -lock-timeout=5m tfplan > /dev/null
+      - name: Verify idempotency
+        run: |
+          rc=0
+          terraform -chdir=platform plan -input=false -detailed-exitcode > /dev/null || rc=$?
+          case "$rc" in
+            0) echo "Second plan: no changes" | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "::error::second plan still has changes"; exit 1 ;;
+            *) echo "::error::second plan failed"; exit 1 ;;
+          esac
