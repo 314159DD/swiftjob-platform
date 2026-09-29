@@ -1,0 +1,25 @@
+{
+  "if": {
+    "anyOf": [
+      {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.Cdn/profiles" },
+          { "field": "Microsoft.CDN/profiles/sku.name", "equals": "Premium_AzureFrontDoor" }
+        ]
+      },
+      {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.ApiManagement/service" },
+          { "field": "Microsoft.ApiManagement/service/sku.name", "notIn": ["Consumption", "Developer"] }
+        ]
+      },
+      {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.DBforPostgreSQL/flexibleServers" },
+          { "field": "Microsoft.DBForPostgreSql/flexibleServers/sku.name", "notIn": ["Standard_B1ms", "Standard_B2s", "Standard_B2ms"] }
+        ]
+      }
+    ]
+  },
+  "then": { "effect": "deny" }
+}

@@ -38,3 +38,15 @@ variable "budget_alert_email" {
   type        = string
   sensitive   = true
 }
+
+variable "enforce_policies" {
+  description = "false = DoNotEnforce (compliance is evaluated and reported, nothing is denied or deployed). Switched to true after the compliance review."
+  type        = bool
+  default     = false
+}
+
+variable "allowed_locations" {
+  description = "Regions resources may use. eastus2 and westeurope are for Static Web Apps, which are not offered in Germany."
+  type        = list(string)
+  default     = ["germanywestcentral", "global", "eastus2", "westeurope"]
+}
