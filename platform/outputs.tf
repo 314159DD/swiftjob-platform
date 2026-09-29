@@ -9,3 +9,8 @@ output "management_group_ids" {
     sandbox   = azurerm_management_group.sandbox.id
   }
 }
+
+output "log_analytics_workspace_id" {
+  description = "Central workspace for diagnostics."
+  value       = azurerm_log_analytics_workspace.central.id
+}
