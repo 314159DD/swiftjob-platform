@@ -39,4 +39,34 @@ git rm -q --cached leaky.md
 rc=0; LEAK_BLOCKLIST=$'secretvendor' bash "$script" >/dev/null 2>&1 || rc=$?
 check "$rc" 0 "untracked files are ignored"
 
+# test_terms_match_literally_and_case_insensitively
+lit=$(mktemp -d); cd "$lit"; git init -q
+printf 'abc\n' > a.md; git add -A
+rc=0; LEAK_BLOCKLIST='a.c' bash "$script" >/dev/null 2>&1 || rc=$?
+check "$rc" 0 "dot is literal, a.c does not match abc"
+printf 'foo[1]\n' > b.md; git add -A
+rc=0; LEAK_BLOCKLIST='Foo[1]' bash "$script" >/dev/null 2>&1 || rc=$?
+check "$rc" 1 "Foo[1] matches foo[1]"
+git rm -q -f --cached b.md; rm b.md; printf 'axxb\n' > c.md; git add -A
+rc=0; LEAK_BLOCKLIST='a*b' bash "$script" >/dev/null 2>&1 || rc=$?
+check "$rc" 0 "star is literal, a*b does not match axxb"
+printf 'a*b\n' > c.md
+rc=0; LEAK_BLOCKLIST='a*b' bash "$script" >/dev/null 2>&1 || rc=$?
+check "$rc" 1 "a*b matches literal a*b"
+
+# test_any_term_of_several_matches
+printf 'uses Other
+' > d.md; git add -A
+rc=0; LEAK_BLOCKLIST=$'unrelated
+other
+z.z' bash "$script" >/dev/null 2>&1 || rc=$?
+check "$rc" 1 "second of several terms matches"
+
+# test_grep_error_fails_closed (tracked file removed from disk cannot be opened)
+err=$(mktemp -d); cd "$err"; git init -q
+printf 'gone\n' > gone.md; git add -A; rm gone.md
+rc=0; out=$(LEAK_BLOCKLIST='secretvendor' bash "$script" 2>&1) || rc=$?
+check "$rc" 2 "unreadable tracked file exits 2"
+check "$(grep -ci 'secretvendor' <<< "$out" || true)" 0 "error output never contains the term"
+
 exit $fail
