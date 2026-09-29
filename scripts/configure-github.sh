@@ -7,9 +7,18 @@ REPO=${GITHUB_REPO:-314159DD/swiftjob-platform}
 VALUES=${1:?path to the bootstrap output}
 val() { grep "^$1=" "$VALUES" | cut -d= -f2; }
 
+for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM; do
+  if [[ -z "$(val "$key" || true)" ]]; then echo "Missing or empty value for $key in $VALUES" >&2; exit 1; fi
+done
+
 for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA; do
   gh variable set "$key" -R "$REPO" --body "$(val "$key")"
 done
+
+if [[ "$(gh api "repos/$REPO" --jq .private)" == "true" ]]; then
+  echo "Repository is private: GitHub Free has no environments or branch protection for private repositories. Run this script again after the repository is public."
+  exit 0
+fi
 
 REVIEWER_ID=$(gh api users/314159DD --jq .id)
 
@@ -22,7 +31,9 @@ gh api -X PUT "repos/$REPO/environments/platform" --input - > /dev/null <<EOF
 {"reviewers": [{"type": "User", "id": ${REVIEWER_ID}}],
  "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
 EOF
-gh api -X POST "repos/$REPO/environments/platform/deployment-branch-policies" -f name=main -f type=branch > /dev/null 2>&1 || true
+if [[ -z "$(gh api "repos/$REPO/environments/platform/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "main") | .name')" ]]; then
+  gh api -X POST "repos/$REPO/environments/platform/deployment-branch-policies" -f name=main -f type=branch > /dev/null
+fi
 gh variable set AZURE_CLIENT_ID -R "$REPO" --env platform --body "$(val AZURE_CLIENT_ID_PLATFORM)"
 
 # Not set here: the owner sets BUDGET_ALERT_EMAIL and LEAK_BLOCKLIST both as Actions secrets and as
