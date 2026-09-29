@@ -9,7 +9,7 @@ import json
 import sys
 from collections import Counter
 
-ACTIONS = ["create", "update", "replace", "delete", "other"]
+ACTIONS = ["create", "update", "replace", "delete", "other", "import"]
 
 
 def classify(actions: list[str]) -> str | None:
@@ -28,6 +28,8 @@ def summarise(plan: dict) -> str:
         kind = classify(change["change"]["actions"])
         if kind:
             counts[(change["type"], kind)] += 1
+        if change["change"].get("importing"):
+            counts[(change["type"], "import")] += 1
     if not counts:
         return "No changes."
 
