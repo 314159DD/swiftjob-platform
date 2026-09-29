@@ -6,6 +6,7 @@
 #   export PATH="$PATH:/c/Program Files/Microsoft SDKs/Azure/CLI2/wbin"
 #   az login && GH_TOKEN=$(gh auth token --user 314159DD) bash scripts/bootstrap.sh
 set -euo pipefail
+shopt -s inherit_errexit
 export MSYS_NO_PATHCONV=1
 
 GITHUB_REPO=${GITHUB_REPO:-314159DD/swiftjob-platform}
@@ -20,13 +21,29 @@ SUB=$(az account show --query id -o tsv)
 TENANT=$(az account show --query tenantId -o tsv)
 ME=$(az ad signed-in-user show --query id -o tsv)
 
+# Removes a leftover elevated root access (User Access Administrator at /). Harmless when absent.
+remove_elevation() {
+  if [[ "$(az role assignment list --assignee "$ME" --role "User Access Administrator" --scope / --query "[?scope=='/'] | length(@)" -o tsv)" != "0" ]]; then
+    az role assignment delete --assignee "$ME" --role "User Access Administrator" --scope / -o none
+  fi
+}
+# No exit path may leave it behind.
+trap 'remove_elevation || true' EXIT
+
 step() { printf '\n== %s\n' "$*"; }
 
 # Creates a role assignment unless an identical one exists (az fails on duplicates).
 assign() { # principal-id principal-type role scope [condition]
-  local existing
+  local existing existing_id current
   existing=$(az role assignment list --assignee "$1" --role "$3" --scope "$4" --query "[?scope=='$4'] | length(@)" -o tsv)
-  if [[ "$existing" != "0" ]]; then return 0; fi
+  if [[ "$existing" != "0" ]]; then
+    if [[ -z "${5:-}" ]]; then return 0; fi
+    # Conditional assignment: keep it only if the stored condition matches (whitespace ignored).
+    current=$(az role assignment list --assignee "$1" --role "$3" --scope "$4" --query "[?scope=='$4'] | [0].condition" -o tsv)
+    if [[ "${current//[[:space:]]/}" == "${5//[[:space:]]/}" ]]; then return 0; fi
+    existing_id=$(az role assignment list --assignee "$1" --role "$3" --scope "$4" --query "[?scope=='$4'] | [0].id" -o tsv)
+    az role assignment delete --ids "$existing_id" -o none
+  fi
   local args=(--assignee-object-id "$1" --assignee-principal-type "$2" --role "$3" --scope "$4" -o none)
   if [[ -n "${5:-}" ]]; then args+=(--condition "$5" --condition-version 2.0); fi
   for attempt in 1 2 3 4 5 6; do
@@ -40,24 +57,22 @@ step "Resource providers (the provider block has resource_provider_registrations
 for ns in Microsoft.Management Microsoft.PolicyInsights Microsoft.Insights Microsoft.OperationalInsights \
           Microsoft.Storage Microsoft.Consumption Microsoft.CostManagement Microsoft.App Microsoft.ManagedIdentity \
           Microsoft.KeyVault Microsoft.DBforPostgreSQL Microsoft.Network; do
-  az provider register --namespace "$ns" -o none
+  if [[ "$ns" == "Microsoft.Management" ]]; then
+    az provider register --namespace "$ns" --wait -o none
+  else
+    az provider register --namespace "$ns" -o none
+  fi
 done
 
 step "Root management group ${ROOT_MG}"
 if ! az account management-group show --name "$ROOT_MG" -o none 2>/dev/null; then
   if ! az account management-group create --name "$ROOT_MG" --display-name "SwiftJob" -o none; then
-    # Some tenants require write access at root to create the first management group. A Global
-    # Administrator gets it only by elevating, and the elevation is removed again right after.
-    az rest --method post --url "https://management.azure.com/providers/Microsoft.Authorization/elevateAccess?api-version=2016-07-01"
-    sleep 60
-    az account management-group create --name "$ROOT_MG" --display-name "SwiftJob" -o none
+    echo "Could not create the root management group. In the Azure portal open Management groups once (this initialises the hierarchy) or check 'Require write permissions for creating new management groups' under Management groups > Settings, then run this script again." >&2
+    exit 1
   fi
 fi
 assign "$ME" User Owner "$ROOT_MG_ID"
-# Never leave the elevated root access behind.
-if [[ "$(az role assignment list --assignee "$ME" --role "User Access Administrator" --scope / --query "[?scope=='/'] | length(@)" -o tsv)" != "0" ]]; then
-  az role assignment delete --assignee "$ME" --role "User Access Administrator" --scope / -o none
-fi
+remove_elevation
 
 step "Resource groups"
 az group create -n "$STATE_RG" -l "$LOCATION" --tags "${TAGS[@]}" -o none
@@ -77,10 +92,15 @@ az storage account blob-service-properties update --account-name "$SA" -g "$STAT
 SA_ID=$(az storage account show -n "$SA" -g "$STATE_RG" --query id -o tsv)
 assign "$ME" User "Storage Blob Data Owner" "$SA_ID"
 for c in platform staging prod; do
-  for attempt in 1 2 3 4 5 6; do
-    az storage container create --account-name "$SA" -n "$c" --auth-mode login -o none && break
-    echo "  waiting for the data role to apply"; sleep 20
+  created=0
+  for attempt in $(seq 1 30); do
+    if az storage container create --account-name "$SA" -n "$c" --auth-mode login -o none; then created=1; break; fi
+    echo "  waiting for the data role to apply (${attempt}/30)"; sleep 20
   done
+  if [[ "$created" != "1" ]]; then
+    echo "Could not create storage container ${c} in ${SA}." >&2
+    exit 1
+  fi
 done
 
 step "GitHub OIDC identities"
@@ -92,7 +112,12 @@ identity() { # display-name github-environment -> prints "appId spObjectId"
   app=$(az ad app list --display-name "$1" --query "[0].appId" -o tsv)
   [[ -n "$app" ]] || app=$(az ad app create --display-name "$1" --query appId -o tsv)
   sp=$(az ad sp list --filter "appId eq '$app'" --query "[0].id" -o tsv)
-  [[ -n "$sp" ]] || sp=$(az ad sp create --id "$app" --query id -o tsv)
+  if [[ -z "$sp" ]]; then
+    for attempt in 1 2 3 4 5 6; do
+      sp=$(az ad sp create --id "$app" --query id -o tsv) && break
+      sp=""; echo "  retry ${attempt} creating the service principal" >&2; sleep 20
+    done
+  fi
   subject="repo:${SUBJECT_REPO}:environment:$2"
   if [[ -z "$(az ad app federated-credential list --id "$app" --query "[?subject=='$subject'].name" -o tsv)" ]]; then
     az ad app federated-credential create --id "$app" -o none --parameters \
@@ -104,8 +129,14 @@ identity() { # display-name github-environment -> prints "appId spObjectId"
 read -r PLAN_APP PLAN_SP <<< "$(identity swiftjob-tf-plan plan)"
 read -r PLATFORM_APP PLATFORM_SP <<< "$(identity swiftjob-tf-platform platform)"
 
+for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP; do
+  if [[ -z "${!v}" ]]; then echo "Identity creation failed: ${v} is empty." >&2; exit 1; fi
+done
+
 step "Roles: tf-plan (read everything, write only the state lock)"
 assign "$PLAN_SP" ServicePrincipal Reader "$ROOT_MG_ID"
+# Also Reader on the subscription: it must read the subscription before the owner moves it under the management group (Task 9).
+assign "$PLAN_SP" ServicePrincipal Reader "/subscriptions/${SUB}"
 for c in platform staging prod; do
   assign "$PLAN_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/${c}"
 done
