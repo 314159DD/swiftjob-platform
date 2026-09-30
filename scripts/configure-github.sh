@@ -7,7 +7,7 @@ REPO=${GITHUB_REPO:-314159DD/swiftjob-platform}
 VALUES=${1:?path to the bootstrap output}
 val() { grep "^$1=" "$VALUES" | cut -d= -f2; }
 
-for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM; do
+for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM AZURE_CLIENT_ID_POLICY_TEST; do
   if [[ -z "$(val "$key" || true)" ]]; then echo "Missing or empty value for $key in $VALUES" >&2; exit 1; fi
 done
 
@@ -35,6 +35,15 @@ if [[ -z "$(gh api "repos/$REPO/environments/platform/deployment-branch-policies
   gh api -X POST "repos/$REPO/environments/platform/deployment-branch-policies" -f name=main -f type=branch > /dev/null
 fi
 gh variable set AZURE_CLIENT_ID -R "$REPO" --env platform --body "$(val AZURE_CLIENT_ID_PLATFORM)"
+
+# policy-test: only main, no reviewer (scheduled runs must not wait), identity that can validate the test templates
+gh api -X PUT "repos/$REPO/environments/policy-test" --input - > /dev/null <<EOF
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+EOF
+if [[ -z "$(gh api "repos/$REPO/environments/policy-test/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "main") | .name')" ]]; then
+  gh api -X POST "repos/$REPO/environments/policy-test/deployment-branch-policies" -f name=main -f type=branch > /dev/null
+fi
+gh variable set AZURE_CLIENT_ID -R "$REPO" --env policy-test --body "$(val AZURE_CLIENT_ID_POLICY_TEST)"
 
 # Not set here: the owner sets BUDGET_ALERT_EMAIL and LEAK_BLOCKLIST both as Actions secrets and as
 # Dependabot secrets (`gh secret set NAME -R <repo> --app dependabot`), because Dependabot PRs do not
