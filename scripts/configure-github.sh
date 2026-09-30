@@ -66,7 +66,7 @@ gh variable set AZURE_CLIENT_ID_PLAN -R "${CONFIG_REPO:-314159DD/swiftjob-platfo
 
 # main: pull requests with green checks only, also for admins
 gh api -X PUT "repos/$REPO/branches/main/protection" --input - > /dev/null <<'EOF'
-{"required_status_checks": {"strict": true, "contexts": ["Terraform checks", "Script tests", "Leak check", "Plan (platform)"]},
+{"required_status_checks": {"strict": true, "contexts": ["Terraform checks", "Script tests", "Leak check", "Plan (platform)", "Plan (staging)"]},
  "enforce_admins": true,
  "required_pull_request_reviews": {"required_approving_review_count": 0},
  "restrictions": null,
