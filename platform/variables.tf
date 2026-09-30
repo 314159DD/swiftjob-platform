@@ -46,9 +46,9 @@ variable "enforce_policies" {
 }
 
 variable "allowed_locations" {
-  description = "Regions resources may use. eastus2 and westeurope are for Static Web Apps, which are not offered in Germany."
+  description = "Regions resources may use. eastus2 and westeurope are for Static Web Apps, which are not offered in Germany; swedencentral and northeurope are for Container Apps compute (ADR 8)."
   type        = list(string)
-  default     = ["germanywestcentral", "global", "eastus2", "westeurope"]
+  default     = ["germanywestcentral", "global", "eastus2", "westeurope", "swedencentral", "northeurope"]
 }
 
 variable "enforce_phase2_policies" {
@@ -64,9 +64,9 @@ variable "static_site_locations" {
 }
 
 variable "compute_locations" {
-  description = "Regions where the Container Apps compute types may run (ADR 7). Data stays in Germany West Central."
+  description = "Regions where the Container Apps compute types may run (ADR 8). Data stays in Germany West Central."
   type        = list(string)
-  default     = ["westeurope"]
+  default     = ["swedencentral", "northeurope"]
 }
 
 variable "compute_types" {
