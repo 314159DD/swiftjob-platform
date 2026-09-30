@@ -49,7 +49,7 @@ jobs:
           PIPELINE_PRINCIPAL_IDS: ${{ vars.PIPELINE_PRINCIPAL_IDS }}
         run: |
           read -r -a ids <<< "${PIPELINE_PRINCIPAL_IDS:-}"
-          if [[ ${#ids[@]} -ne 3 ]]; then echo "::error::PIPELINE_PRINCIPAL_IDS not set or not exactly 3 ids"; exit 1; fi
+          if [[ ${#ids[@]} -ne 4 ]]; then echo "::error::PIPELINE_PRINCIPAL_IDS not set or not exactly 4 ids"; exit 1; fi
           # Azure makes the creator of a management group its Owner. Terraform does not track that, so check it here.
           mgs=$(az rest --method get --url "https://management.azure.com/providers/Microsoft.Management/managementGroups/mg-swiftjob?api-version=2021-04-01&\$expand=children&\$recurse=true" -o json |
             jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | tr -d '\r' | sort -u)
