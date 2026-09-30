@@ -123,6 +123,7 @@ run "every_role_assignment_names_service_principal" {
     condition = alltrue(concat(
       [for r in azurerm_role_assignment.blob : r.principal_type == "ServicePrincipal"],
       [for r in azurerm_role_assignment.telemetry : r.principal_type == "ServicePrincipal"],
+      [for r in azurerm_role_assignment.secret_reader : r.principal_type == "ServicePrincipal"],
       [azurerm_role_assignment.killswitch.principal_type == "ServicePrincipal"],
     ))
     error_message = "the ABAC condition of tf-staging only allows grants to service principals"

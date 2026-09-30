@@ -81,3 +81,94 @@ variable "name_salt" {
   type        = string
   default     = ""
 }
+
+variable "apps_enabled" {
+  description = "false: infrastructure only. Apps, jobs and secret grants are created once the Key Vault secrets exist."
+  type        = bool
+  default     = false
+}
+
+variable "images" {
+  description = "Image references by key, digests only."
+  type        = map(string)
+  default     = {}
+  validation {
+    condition     = alltrue([for v in values(var.images) : can(regex("^ghcr\\.io/314159dd/[a-z0-9-]+@sha256:[0-9a-f]{64}$", v))])
+    error_message = "images must be GHCR digests (ghcr.io/314159dd/<name>@sha256:<64 hex>)"
+  }
+}
+
+variable "registry" {
+  description = "Private registry and the Key Vault secret that holds its pull token. null for public images only."
+  type        = object({ server = string, username = string, password_secret = string })
+  default     = null
+  validation {
+    condition     = var.registry == null || contains(keys(var.secrets), var.registry.password_secret)
+    error_message = "registry.password_secret must be one of the secrets"
+  }
+}
+
+variable "secrets" {
+  description = "Key Vault secrets by name (values are set outside Terraform) and the identities that may read each."
+  type        = map(object({ readers = list(string) }))
+  default     = {}
+  validation {
+    condition     = alltrue([for n, s in var.secrets : can(regex("^[a-z0-9][a-z0-9-]{0,62}$", n)) && alltrue([for r in s.readers : contains(var.identities, r)])])
+    error_message = "secret names are lowercase letters, digits and dashes; readers must be listed identities"
+  }
+}
+
+variable "apps" {
+  description = "Container apps by short name. image is a key of images or, for public images, a full reference."
+  type = map(object({
+    identity     = string
+    image        = string
+    port         = number
+    cpu          = number
+    memory       = string
+    min_replicas = optional(number, 0)
+    max_replicas = optional(number, 1)
+    health_path  = optional(string)
+    env          = optional(map(string), {})
+    secret_env   = optional(map(string), {}) # ENV_NAME = Key Vault secret name
+  }))
+  default = {}
+}
+
+variable "jobs" {
+  description = "Container Apps Jobs by short name. enabled = false creates a manual trigger (never runs on its own)."
+  type = map(object({
+    identity           = string
+    image              = string
+    command            = list(string)
+    args               = optional(list(string), [])
+    cpu                = number
+    memory             = string
+    cron               = optional(string)
+    enabled            = optional(bool, false)
+    timeout_seconds    = number
+    retry_limit        = optional(number, 0)
+    env                = optional(map(string), {})
+    secret_env         = optional(map(string), {})
+    missed_alert_hours = optional(number) # alert when no successful run within this many hours (1 to 48)
+  }))
+  default = {}
+  validation {
+    condition     = alltrue([for j in values(var.jobs) : j.missed_alert_hours == null || (j.missed_alert_hours >= 1 && j.missed_alert_hours <= 48 && floor(j.missed_alert_hours) == j.missed_alert_hours)])
+    error_message = "missed_alert_hours must be a whole number between 1 and 48 (the alert window is rounded up to an allowed size and the query filters the exact hours)"
+  }
+}
+
+variable "alerts" {
+  description = "Operations alerts. api_app names the app whose errors and latency are watched."
+  type = object({
+    api_app           = optional(string)
+    api_5xx_threshold = optional(number, 5)
+    api_p95_ms        = optional(number, 3000)
+  })
+  default = {}
+  validation {
+    condition     = var.alerts.api_app == null || contains(keys(var.apps), var.alerts.api_app)
+    error_message = "alerts.api_app must name one of the apps"
+  }
+}

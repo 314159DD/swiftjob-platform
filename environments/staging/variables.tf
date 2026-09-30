@@ -53,3 +53,74 @@ variable "alert_email" {
   type        = string
   sensitive   = true
 }
+
+variable "apps_enabled" {
+  description = "false: infrastructure only. Apps, jobs and secret grants are created once the Key Vault secrets exist."
+  type        = bool
+  default     = false
+}
+
+variable "images" {
+  description = "Image references by key, digests only."
+  type        = map(string)
+  default     = {}
+}
+
+variable "registry" {
+  description = "Private registry and the Key Vault secret that holds its pull token. null for public images only."
+  type        = object({ server = string, username = string, password_secret = string })
+  default     = null
+}
+
+variable "secrets" {
+  description = "Key Vault secrets by name (values are set outside Terraform) and the identities that may read each."
+  type        = map(object({ readers = list(string) }))
+  default     = {}
+}
+
+variable "apps" {
+  description = "Container apps by short name."
+  type = map(object({
+    identity     = string
+    image        = string
+    port         = number
+    cpu          = number
+    memory       = string
+    min_replicas = optional(number, 0)
+    max_replicas = optional(number, 1)
+    health_path  = optional(string)
+    env          = optional(map(string), {})
+    secret_env   = optional(map(string), {})
+  }))
+  default = {}
+}
+
+variable "jobs" {
+  description = "Container Apps Jobs by short name."
+  type = map(object({
+    identity           = string
+    image              = string
+    command            = list(string)
+    args               = optional(list(string), [])
+    cpu                = number
+    memory             = string
+    cron               = optional(string)
+    enabled            = optional(bool, false)
+    timeout_seconds    = number
+    retry_limit        = optional(number, 0)
+    env                = optional(map(string), {})
+    secret_env         = optional(map(string), {})
+    missed_alert_hours = optional(number)
+  }))
+  default = {}
+}
+
+variable "alerts" {
+  description = "Operations alerts. api_app names the app whose errors and latency are watched."
+  type = object({
+    api_app           = optional(string)
+    api_5xx_threshold = optional(number, 5)
+    api_p95_ms        = optional(number, 3000)
+  })
+  default = {}
+}
