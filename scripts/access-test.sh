@@ -19,7 +19,6 @@ SA=$(az storage account list -g "$RG" --query "[0].name" -o tsv 2> /dev/null | t
 # Management plane read, so it needs no data role. A fixed probe name is the fallback when there is none yet.
 CONTAINER=$(az storage container-rm list --storage-account "$SA" -g "$RG" --query "[0].name" -o tsv 2> /dev/null | tr -d '\r' || true)
 CONTAINER=${CONTAINER:-access-probe}
-BOGUS_KEY=$(head -c 64 /dev/zero | base64 | tr -d '\n')
 
 # Prints the HTTP status only and succeeds only on 200, so the refusal check reads "HTTP 401" and nothing else.
 anonymous_get() { # url
@@ -31,7 +30,7 @@ anonymous_get() { # url
 # Succeeds only when the account property is exactly the string "false" (a missing or null value fails).
 account_flag_false() { # property
   local v
-  v=$(az storage account show -n "$SA" -g "$RG" --query "$1" -o tsv 2> /dev/null | tr -d '') || return 2
+  v=$(az storage account show -n "$SA" -g "$RG" --query "$1" -o tsv 2> /dev/null | tr -d '\r') || return 2
   [[ "$v" == false ]]
 }
 anonymous_kv() { anonymous_get "https://${KV}.vault.azure.net/secrets?api-version=7.4"; }
