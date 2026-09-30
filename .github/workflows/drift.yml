@@ -14,7 +14,7 @@ defaults:
     shell: bash
 
 concurrency:
-  group: apply-platform
+  group: drift
   cancel-in-progress: false
 
 jobs:
@@ -31,10 +31,14 @@ jobs:
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       TF_IN_AUTOMATION: "true"
+      TF_STATE_RG: ${{ vars.TF_STATE_RG }}
+      TF_STATE_SA: ${{ vars.TF_STATE_SA }}
       TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       TF_VAR_budget_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -60,15 +64,14 @@ jobs:
         with:
           terraform_version: "~1.16"
           terraform_wrapper: false
-      - run: >
-          terraform -chdir=platform init
-          -backend-config="resource_group_name=${{ vars.TF_STATE_RG }}"
-          -backend-config="storage_account_name=${{ vars.TF_STATE_SA }}"
+      - name: Init
+        run: bash scripts/tf-layer.sh init platform
       - name: Plan
         run: |
           rc=0
-          terraform -chdir=platform plan -input=false -lock-timeout=5m -detailed-exitcode -out=tfplan > /dev/null || rc=$?
+          bash scripts/tf-layer.sh plan platform || rc=$?
           if [[ -f platform/tfplan ]]; then
-            terraform -chdir=platform show -json tfplan | python3 scripts/plan_summary.py >> "$GITHUB_STEP_SUMMARY"
+            # A failing summary must not hide the drift result below it.
+            bash scripts/tf-layer.sh summary platform >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
           fi
           bash scripts/drift-exit.sh "$rc" | tee -a "$GITHUB_STEP_SUMMARY"

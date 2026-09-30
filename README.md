@@ -53,7 +53,7 @@ The three cost guards skip `mg-sandbox`.
 ## How changes flow
 
 1. A pull request runs four required checks: `Terraform checks` (format, validate, tflint, Checkov), `Script
-   tests`, `Leak check` and `Plan`. The plan is posted as a per-type summary of resource types and counts.
+   tests`, `Leak check` and `Plan (platform)`. The plan is posted as a per-type summary of resource types and counts.
 2. After the merge, the `Apply` workflow waits for a reviewer's approval on the `platform` environment, plans,
    applies and then plans again. The second plan must report no changes.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
