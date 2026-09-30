@@ -45,4 +45,9 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - run: bash scripts/access-test.sh rg-swiftjob-staging | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Check the PostgreSQL client
+        run: psql --version
+      - name: Access test
+        env:
+          REQUIRE_POSTGRES: "0"
+        run: bash scripts/access-test.sh rg-swiftjob-staging | tee -a "$GITHUB_STEP_SUMMARY"
