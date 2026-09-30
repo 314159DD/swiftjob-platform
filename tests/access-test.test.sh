@@ -27,6 +27,7 @@ cat > "$tmp/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 # CURL_CODE = status to answer ; CURL_FAIL=1 = network failure
 [[ "${CURL_FAIL:-0}" == 1 ]] && exit 6
+[[ "$*" == *blob.core* && -n "${CURL_BLOB:-}" ]] && { printf "%s" "$CURL_BLOB"; exit 0; }
 printf '%s' "${CURL_CODE:-401}"
 STUB
 chmod +x "$tmp/bin/az" "$tmp/bin/curl"
@@ -55,7 +56,7 @@ run KV_FIREWALL=1
 check "$rc" 1 "a firewall Forbidden is not an RBAC refusal"
 run CURL_CODE=404
 check "$rc" 1 "anonymous 404 fails"
-run CURL_CODE=409
+run CURL_BLOB=409
 check "$rc" 0 "anonymous 409 is refused"
 run CURL_CODE=200
 check "$rc" 1 "anonymous 200 fails"; check "$(count 'FAIL: list secrets anonymously was allowed')" 1 "anonymous vault named"
