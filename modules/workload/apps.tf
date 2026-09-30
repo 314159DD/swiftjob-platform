@@ -1,6 +1,7 @@
 locals {
   app_fqdn = { for k, _ in var.apps : k => "ca-${local.name}-${k}.${azurerm_container_app_environment.this.default_domain}" }
   refs = merge(
+    local.pg_refs,
     { for k, f in local.app_fqdn : "@url:${k}" => "https://${f}" },
     {
       "@appinsights" = azurerm_application_insights.this.connection_string
@@ -63,7 +64,7 @@ resource "azurerm_container_app" "this" {
       cpu    = each.value.cpu
       memory = each.value.memory
       dynamic "env" {
-        for_each = merge(each.value.env, { AZURE_CLIENT_ID = azurerm_user_assigned_identity.this[each.value.identity].client_id })
+        for_each = merge(each.value.env, lookup(local.pg_env, each.value.identity, {}), { AZURE_CLIENT_ID = azurerm_user_assigned_identity.this[each.value.identity].client_id })
         content {
           name  = env.key
           value = lookup(local.refs, env.value, env.value)
