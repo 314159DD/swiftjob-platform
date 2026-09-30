@@ -20,7 +20,8 @@ data "azurerm_resource_group" "prod" {
   name = "rg-swiftjob-prod" # created empty by scripts/bootstrap.sh
 }
 
-# Allowed regions: Germany West Central and global for everything, the Static Web Apps regions for that type only.
+# Allowed regions: Germany West Central and global for everything, the Static Web Apps regions for that type only,
+# and the compute region for the Container Apps types only (ADR 6).
 # Replaces allowed-locations, which allowed eastus2 and westeurope for every type.
 resource "azurerm_policy_definition" "allowed_locations" {
   name                = "allowed-locations-swa"
@@ -32,6 +33,8 @@ resource "azurerm_policy_definition" "allowed_locations" {
   parameters = jsonencode({
     listOfAllowedLocations = { type = "Array", metadata = { displayName = "Allowed locations" } }
     staticSiteLocations    = { type = "Array", metadata = { displayName = "Allowed locations for Static Web Apps" } }
+    computeLocations       = { type = "Array", metadata = { displayName = "Allowed locations for Container Apps compute" } }
+    computeTypes           = { type = "Array", metadata = { displayName = "Resource types of the Container Apps compute layer" } }
   })
 }
 
@@ -44,6 +47,8 @@ resource "azurerm_management_group_policy_assignment" "allowed_locations_v2" {
   parameters = jsonencode({
     listOfAllowedLocations = { value = ["germanywestcentral"] }
     staticSiteLocations    = { value = var.static_site_locations }
+    computeLocations       = { value = var.compute_locations }
+    computeTypes           = { value = var.compute_types }
   })
 }
 

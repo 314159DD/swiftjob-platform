@@ -69,6 +69,30 @@ run "names_fit_azure_limits" {
   }
 }
 
+run "compute_region_differs_from_data_region" {
+  command = apply
+  variables {
+    location         = "germanywestcentral"
+    compute_location = "westeurope"
+  }
+  assert {
+    condition     = azurerm_container_app_environment.this.location == "westeurope"
+    error_message = "the Container Apps environment must use compute_location"
+  }
+  assert {
+    condition     = azurerm_key_vault.this.location == "germanywestcentral" && azurerm_storage_account.this.location == "germanywestcentral"
+    error_message = "Key Vault and storage must stay in location"
+  }
+}
+
+run "compute_region_defaults_to_data_region" {
+  command = apply
+  assert {
+    condition     = azurerm_container_app_environment.this.location == azurerm_key_vault.this.location
+    error_message = "without compute_location the environment shares the data region"
+  }
+}
+
 run "one_identity_per_workload" {
   command = apply
   assert {

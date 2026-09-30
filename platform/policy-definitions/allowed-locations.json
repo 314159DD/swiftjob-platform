@@ -11,6 +11,14 @@
             { "field": "location", "in": "[parameters('staticSiteLocations')]" }
           ]
         }
+      },
+      {
+        "not": {
+          "allOf": [
+            { "field": "type", "in": "[parameters('computeTypes')]" },
+            { "field": "location", "in": "[parameters('computeLocations')]" }
+          ]
+        }
       }
     ]
   },
