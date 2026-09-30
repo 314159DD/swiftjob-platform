@@ -128,8 +128,9 @@ identity() { # display-name github-environment -> prints "appId spObjectId"
 
 read -r PLAN_APP PLAN_SP <<< "$(identity swiftjob-tf-plan plan)"
 read -r PLATFORM_APP PLATFORM_SP <<< "$(identity swiftjob-tf-platform platform)"
+read -r PT_APP PT_SP <<< "$(identity swiftjob-policy-test policy-test)"
 
-for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP; do
+for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP PT_APP PT_SP; do
   if [[ -z "${!v}" ]]; then echo "Identity creation failed: ${v} is empty." >&2; exit 1; fi
 done
 
@@ -141,20 +142,35 @@ for c in platform staging prod; do
   assign "$PLAN_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/${c}"
 done
 
-step "Roles: tf-plan may validate deployments in the platform resource group (policy test)"
-VALIDATOR_ROLE=swiftjob-deployment-validator
+step "Roles: policy-test identity (validates the forbidden templates in the platform resource group)"
 PLATFORM_RG_ID="/subscriptions/${SUB}/resourceGroups/${PLATFORM_RG}"
-VALIDATOR_DEF=$(jq -n --arg name "$VALIDATOR_ROLE" --arg scope "$PLATFORM_RG_ID" '{
-  Name: $name,
-  Description: "Validate ARM deployments without creating anything (policy test).",
-  Actions: ["Microsoft.Resources/deployments/validate/action", "Microsoft.Resources/deployments/read"],
-  AssignableScopes: [$scope]}')
-if [[ -z "$(az role definition list --name "$VALIDATOR_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
-  az role definition create -o none --role-definition "$VALIDATOR_DEF"
-else
-  az role definition update -o none --role-definition "$VALIDATOR_DEF"
+# An earlier version gave tf-plan a validate-only role. ARM validate needs write permission per resource type in the
+# template (same as what-if), so that role was not enough. Remove it again, tf-plan stays read-only.
+OLD_ROLE=swiftjob-deployment-validator
+if [[ -n "$(az role definition list --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
+  if [[ "$(az role assignment list --assignee "$PLAN_SP" --role "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "length(@)" -o tsv)" != "0" ]]; then
+    az role assignment delete --assignee "$PLAN_SP" --role "$OLD_ROLE" --scope "$PLATFORM_RG_ID" -o none
+  fi
+  if [[ "$(az role assignment list --all --query "[?roleDefinitionName=='$OLD_ROLE'] | length(@)" -o tsv)" == "0" ]]; then
+    az role definition delete --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID" -o none       || echo "warn: could not delete role definition $OLD_ROLE yet, next run will retry" >&2
+  fi
 fi
-assign "$PLAN_SP" ServicePrincipal "$VALIDATOR_ROLE" "$PLATFORM_RG_ID"
+# Validate needs write permission for every resource type in the template, like what-if. The deny policies still
+# refuse the forbidden templates, and this identity can only be used from main (environment policy-test).
+TESTER_ROLE=swiftjob-policy-tester
+TESTER_DEF=$(jq -n --arg name "$TESTER_ROLE" --arg scope "$PLATFORM_RG_ID" '{
+  Name: $name,
+  Description: "Validate the policy test templates in the platform resource group (validate needs write per resource type).",
+  Actions: ["Microsoft.Resources/deployments/validate/action", "Microsoft.Resources/deployments/read",
+            "Microsoft.Storage/storageAccounts/write", "Microsoft.Network/natGateways/write",
+            "Microsoft.DBforPostgreSQL/flexibleServers/write", "Microsoft.Resources/subscriptions/resourceGroups/read"],
+  AssignableScopes: [$scope]}')
+if [[ -z "$(az role definition list --name "$TESTER_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
+  az role definition create -o none --role-definition "$TESTER_DEF"
+else
+  az role definition update -o none --role-definition "$TESTER_DEF"
+fi
+assign "$PT_SP" ServicePrincipal "$TESTER_ROLE" "$PLATFORM_RG_ID"
 
 step "Roles: tf-platform (management groups, policy, the platform resource group, the budget)"
 assign "$PLATFORM_SP" ServicePrincipal Reader "$ROOT_MG_ID"
@@ -177,4 +193,5 @@ TF_STATE_RG=${STATE_RG}
 TF_STATE_SA=${SA}
 AZURE_CLIENT_ID_PLAN=${PLAN_APP}
 AZURE_CLIENT_ID_PLATFORM=${PLATFORM_APP}
+AZURE_CLIENT_ID_POLICY_TEST=${PT_APP}
 EOF
