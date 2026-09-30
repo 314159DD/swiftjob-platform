@@ -7,23 +7,23 @@ that produced them. Run IDs link to GitHub Actions.
 
 | Check | Repeat it with |
 |---|---|
-| Bootstrap is idempotent and leaves no elevated access | Run `scripts/bootstrap.sh` again, compare its output values, then `az role assignment list --scope / --role "User Access Administrator"` must be empty |
+| Bootstrap is idempotent and leaves no elevated access | Run `scripts/bootstrap.sh` again, compare its output values, then `MSYS_NO_PATHCONV=1 az role assignment list --scope / --role "User Access Administrator" --query "[?scope=='/']" -o table` must be empty (on Linux or macOS drop the prefix) |
 | Apply is idempotent | The last step of the `Apply` workflow: a second plan must report no changes |
 | Policies are compliant | Azure Policy compliance report for `mg-swiftjob`, or `az policy state summarize --management-group mg-swiftjob` |
 | Forbidden resources are refused | Run the `Policy test` workflow (also weekly, Monday 05:17 UTC) |
-| The policy test can fail | Run `scripts/policy-test.sh` while `enforce_policies = false`: the forbidden templates validate and the test is red |
+| The policy test can fail | `bash scripts/policy-test.sh rg-swiftjob-platform` with a temporary `enforce_policies = false`: the forbidden templates validate and the test is red. The recorded evidence is run 36651056141 (red) and 36652775932 (green); the weekly workflow repeats the green case |
 | Drift is detected | Change a platform resource by hand, run the `Drift` workflow (also nightly, 03:37 UTC): red. Revert it: green |
 | The leak check works | `bash tests/leak-check.test.sh`, and the `Leak check` job on every pull request |
 | The drift exit codes are mapped correctly | `bash tests/drift-exit.test.sh` |
 | The plan summary shows no names or values | `python -m pytest tests -q` |
 | The safety net for the application repositories exists | In each private application repository: `git tag -l pre-azure-2026-09-30`, `git branch --list azure-migration`, and `git bundle verify` on the offline bundle |
 
-## 2026-09-29: first apply and idempotency
+## 2026-09-29 to 2026-09-30: first apply and idempotency
 
 - Bootstrap: 4 runs, all exit code 0, identical output values. The root management group `mg-swiftjob` was
   created without elevated access. Afterwards there were 0 "User Access Administrator" assignments at `/`.
 - Apply [36647231734](https://github.com/314159DD/swiftjob-platform/actions/runs/36647231734): 24 resources
-  created (5 management groups and 1 imported root, the Log Analytics workspace, the subscription budget,
+  created and the root management group imported (5 management groups, the Log Analytics workspace, the subscription budget,
   12 policy assignments, 1 policy definition, 4 role assignments). The second plan reported "no changes".
 - After the owner moved the subscription under `mg-workloads`, Apply
   [36648633515](https://github.com/314159DD/swiftjob-platform/actions/runs/36648633515) reported no changes.

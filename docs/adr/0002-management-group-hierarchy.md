@@ -6,7 +6,7 @@
 ## Context
 
 Policy and access are easiest to reason about when they are assigned once, high up, and inherited. The
-subscription is a pay-as-you-go trial (Free Trial, ends around 2026-10-28) and holds one other project already.
+subscription is a free trial and already holds one other project.
 After the trial there should be one subscription per environment, so that a budget, a role assignment or a
 mistake in one environment cannot reach another.
 
