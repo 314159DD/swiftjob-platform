@@ -29,6 +29,9 @@ All three use GitHub OIDC federation. There is no secret. Each is tied to one Gi
 | `swiftjob-tf-platform` | `platform`, required reviewer, `main` only | Applies the platform layer: management groups, policy, the platform resource group, the budget, and role assignments limited by an ABAC condition to two logging roles |
 | `swiftjob-policy-test` | `policy-test`, `main` only | Validates test templates in the platform resource group, with write on exactly the tested resource types |
 
+`swiftjob-tf-plan` is read-only on Azure resources but has write on the state containers (for the state lock), so it
+is not "plan and nothing else". This will be reduced to read plus lock-free plans in the next phase.
+
 ### Policies
 
 12 assignments at `mg-swiftjob`, enforced ([ADR 3](docs/adr/0003-policy-rollout-do-not-enforce-first.md)).
@@ -56,8 +59,8 @@ The three cost guards skip `mg-sandbox`.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
 4. A weekly `Policy test` workflow validates templates that must be refused and one that must pass.
 
-Workflows pin every action to a full commit SHA and use minimal permissions. Terraform output never goes to the
-log, which is public.
+Workflows pin every action to a full commit SHA and use minimal permissions. The plan and apply output (stdout)
+never goes to the log; Terraform errors (stderr) still do, and can name resources. The log is public.
 
 ## Cost guardrails
 

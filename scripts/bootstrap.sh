@@ -185,6 +185,26 @@ ALLOWED='92aaf0da-9dab-42b6-94a3-d43ce8d16293, 749f88d5-cbae-40b8-bcfc-e573ddc77
 CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED}}))"
 assign "$PLATFORM_SP" ServicePrincipal "Role Based Access Control Administrator" "$ROOT_MG_ID" "$CONDITION"
 
+step "Pipeline identities hold no Owner or User Access Administrator anywhere under ${ROOT_MG}"
+# Azure makes the creator of a management group its Owner. Terraform (tf-platform) creates management groups,
+# so Azure assigns it Owner on each new one. Nothing in Terraform tracks those assignments, so drift cannot see
+# them. Remove them here. `az role assignment list --all` does not list management group scopes, so every
+# management group under the root is listed explicitly. The nightly Drift workflow runs scripts/rbac-guard.sh.
+MG_NAMES=$(az account management-group show --name "$ROOT_MG" --expand --recurse -o json \
+  | jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | sort -u)
+for sp in "$PLAN_SP" "$PLATFORM_SP" "$PT_SP"; do
+  ids=$(az role assignment list --all --assignee "$sp" --query "[?roleDefinitionName=='Owner' || roleDefinitionName=='User Access Administrator'].id" -o tsv)
+  for mg in $MG_NAMES; do
+    mg_ids=$(az role assignment list --assignee "$sp" --scope "/providers/Microsoft.Management/managementGroups/${mg}" \
+      --query "[?roleDefinitionName=='Owner' || roleDefinitionName=='User Access Administrator'].id" -o tsv)
+    ids=$(printf '%s\n%s\n' "$ids" "$mg_ids" | tr -d '\r' | sed '/^$/d' | sort -u)
+  done
+  for id in $ids; do
+    echo "  removing ${id}"
+    az role assignment delete --ids "$id" -o none
+  done
+done
+
 step "Done. Values for scripts/configure-github.sh:"
 cat <<EOF
 AZURE_TENANT_ID=${TENANT}
@@ -194,4 +214,5 @@ TF_STATE_SA=${SA}
 AZURE_CLIENT_ID_PLAN=${PLAN_APP}
 AZURE_CLIENT_ID_PLATFORM=${PLATFORM_APP}
 AZURE_CLIENT_ID_POLICY_TEST=${PT_APP}
+PIPELINE_PRINCIPAL_IDS=${PLAN_SP} ${PLATFORM_SP} ${PT_SP}
 EOF
