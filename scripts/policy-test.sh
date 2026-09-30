@@ -8,18 +8,23 @@ RG=${1:?resource group}
 dir="$(cd "$(dirname "$0")/.." && pwd)/tests/policy-test"
 fail=0
 
-for t in storage-shared-key wrong-region nat-gateway postgres-large; do
+redact() { sed 's#/subscriptions/[^/]*#/subscriptions/***#g'; }
+first_error() { grep -m1 -E "Code|Message|ERROR" <<< "$1" | redact | cut -c1-300 || true; }
+
+# template:expected policy assignment name
+for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-locations             nat-gateway:deny-costly-types postgres-large:deny-costly-skus; do
+  t=${pair%%:*}; want=${pair##*:}
   out=$(az deployment group validate -g "$RG" --template-file "$dir/$t.json" -o none 2>&1) && rc=0 || rc=$?
-  if (( rc != 0 )) && grep -q "RequestDisallowedByPolicy" <<< "$out"; then
-    echo "PASS: $t refused by policy"
+  if (( rc != 0 )) && grep -q "RequestDisallowedByPolicy" <<< "$out" && grep -q "$want" <<< "$out"; then
+    echo "PASS: $t refused by $want"
   else
-    echo "FAIL: $t was not refused by policy (exit $rc)"; fail=1
+    echo "FAIL: $t not refused by $want (exit $rc): $(first_error "$out")"; fail=1
   fi
 done
 
-if az deployment group validate -g "$RG" --template-file "$dir/allowed-control.json" -o none 2>/dev/null; then
+if out=$(az deployment group validate -g "$RG" --template-file "$dir/allowed-control.json" -o none 2>&1); then
   echo "PASS: allowed-control validates"
 else
-  echo "FAIL: allowed-control was refused, the test would pass for the wrong reason"; fail=1
+  echo "FAIL: allowed-control was refused, the test would pass for the wrong reason: $(first_error "$out")"; fail=1
 fi
 exit $fail

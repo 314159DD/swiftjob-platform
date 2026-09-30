@@ -144,12 +144,15 @@ done
 step "Roles: tf-plan may validate deployments in the platform resource group (policy test)"
 VALIDATOR_ROLE=swiftjob-deployment-validator
 PLATFORM_RG_ID="/subscriptions/${SUB}/resourceGroups/${PLATFORM_RG}"
+VALIDATOR_DEF=$(jq -n --arg name "$VALIDATOR_ROLE" --arg scope "$PLATFORM_RG_ID" '{
+  Name: $name,
+  Description: "Validate ARM deployments without creating anything (policy test).",
+  Actions: ["Microsoft.Resources/deployments/validate/action", "Microsoft.Resources/deployments/read"],
+  AssignableScopes: [$scope]}')
 if [[ -z "$(az role definition list --name "$VALIDATOR_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
-  az role definition create -o none --role-definition "$(jq -n --arg name "$VALIDATOR_ROLE" --arg scope "$PLATFORM_RG_ID" '{
-    Name: $name,
-    Description: "Validate ARM deployments without creating anything (policy test).",
-    Actions: ["Microsoft.Resources/deployments/validate/action", "Microsoft.Resources/deployments/read"],
-    AssignableScopes: [$scope]}')"
+  az role definition create -o none --role-definition "$VALIDATOR_DEF"
+else
+  az role definition update -o none --role-definition "$VALIDATOR_DEF"
 fi
 assign "$PLAN_SP" ServicePrincipal "$VALIDATOR_ROLE" "$PLATFORM_RG_ID"
 

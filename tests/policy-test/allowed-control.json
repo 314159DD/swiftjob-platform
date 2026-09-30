@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "resources": [{
     "type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-05-01",
-    "name": "[concat('stpolicyok', uniqueString(resourceGroup().id))]",
+    "name": "[take(concat('stok', uniqueString(resourceGroup().id)), 24)]",
     "location": "germanywestcentral", "kind": "StorageV2", "sku": { "name": "Standard_LRS" },
     "tags": { "project": "swiftjob", "env": "platform", "owner": "steven" },
     "properties": { "allowSharedKeyAccess": false, "minimumTlsVersion": "TLS1_2", "allowBlobPublicAccess": false }

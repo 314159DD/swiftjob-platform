@@ -7,6 +7,7 @@
     "sku": { "name": "Standard_D4ds_v5", "tier": "GeneralPurpose" },
     "tags": { "project": "swiftjob", "env": "platform", "owner": "steven" },
     "properties": { "version": "16", "storage": { "storageSizeGB": 32 },
-      "authConfig": { "activeDirectoryAuth": "Enabled", "passwordAuth": "Disabled" } }
+      "authConfig": { "activeDirectoryAuth": "Enabled", "passwordAuth": "Disabled", "tenantId": "[subscription().tenantId]" },
+      "network": { "publicNetworkAccess": "Enabled" } }
   }]
 }
