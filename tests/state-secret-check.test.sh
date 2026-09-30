@@ -18,7 +18,8 @@ run() { rc=0; out=$(FAKE_STATE="$1" bash "$root/scripts/state-secret-check.sh" s
 echo '{"resources":[{"type":"azurerm_container_app","instances":[{"attributes":{"secret":[{"name":"a","key_vault_secret_id":"x"}]}}]},{"type":"azurerm_container_app_job","instances":[{"attributes":{"secret":[]}}]}]}' > "$tmp/clean.json"
 run "$tmp/clean.json"
 check "$rc" 0 "references only: passes"
-check "$out" "secret entries with a value: 0" "reports the count"
+check "$(grep -c "^secret entries with a value: 0$" <<< "$out" || true)" 1 "reports the count"
+check "$(grep -c "^container apps and jobs inspected: 2$" <<< "$out" || true)" 1 "reports how many it inspected"
 
 echo '{"resources":[{"type":"azurerm_container_app_job","instances":[{"attributes":{"secret":[{"name":"a","value":"CANARY-VALUE"}]}}]}]}' > "$tmp/dirty.json"
 run "$tmp/dirty.json"
@@ -27,4 +28,11 @@ check "$(grep -c 'CANARY-VALUE' <<< "$out" || true)" 0 "the value is never print
 
 rc=0; out=$(FAKE_TF_EXIT=1 FAKE_STATE="$tmp/clean.json" bash "$root/scripts/state-secret-check.sh" staging 2>&1) || rc=$?
 check "$rc" 1 "an unreadable state fails"
+echo '{}' > "$tmp/empty.json"
+run "$tmp/empty.json"; check "$rc" 1 "an empty state fails"
+echo '{"resources":[{"type":"azurerm_resource_group","instances":[{"attributes":{}}]}]}' > "$tmp/other.json"
+run "$tmp/other.json"; check "$rc" 1 "a state without container apps or jobs fails"
+echo '{"resources":[{"type":"azurerm_container_app","instances":[{"attributes":{"name":"x"}}]}]}' > "$tmp/drift.json"
+run "$tmp/drift.json"; check "$rc" 1 "a missing secret attribute fails"
+check "$(grep -c 'no secret attribute' <<< "$out" || true)" 1 "the drift message is clear"
 exit $fail
