@@ -25,12 +25,9 @@ All three use GitHub OIDC federation. There is no secret. Each is tied to one Gi
 
 | Identity | Environment | What it can do |
 |---|---|---|
-| `swiftjob-tf-plan` | `plan` | Read on `mg-swiftjob` and the subscription, write on the three state containers (for the lock). Runs `terraform plan` on pull requests and for the drift check |
+| `swiftjob-tf-plan` | `plan` | Read on `mg-swiftjob` and the subscription, read on the three state containers. Plans are lock-free. Runs `terraform plan` on pull requests and for the drift check |
 | `swiftjob-tf-platform` | `platform`, required reviewer, `main` only | Applies the platform layer: management groups, policy, the platform resource group, the budget, and role assignments limited by an ABAC condition to two logging roles |
 | `swiftjob-policy-test` | `policy-test`, `main` only | Validates test templates in the platform resource group, with write on exactly the tested resource types |
-
-`swiftjob-tf-plan` is read-only on Azure resources but has write on the state containers (for the state lock), so it
-is not "plan and nothing else". This will be reduced to read plus lock-free plans in the next phase.
 
 ### Policies
 
@@ -59,7 +56,7 @@ The three cost guards skip `mg-sandbox`.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
 4. A weekly `Policy test` workflow validates templates that must be refused and one that must pass.
 
-Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Errors from the platform layer are printed after redaction; layers with private configuration withhold them and print only the exit code.
+Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Terraform errors are redacted for the platform layer and withheld for layers with private inputs; the full text is only available in a private workflow.
 
 ## Cost guardrails
 
