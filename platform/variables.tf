@@ -75,6 +75,18 @@ variable "compute_types" {
   default     = ["Microsoft.App/managedEnvironments", "Microsoft.App/containerApps", "Microsoft.App/jobs"]
 }
 
+variable "database_locations" {
+  description = "Regions where PostgreSQL flexible servers may run (ADR 9). Germany West Central is restricted for this subscription."
+  type        = list(string)
+  default     = ["swedencentral"]
+}
+
+variable "database_types" {
+  description = "Resource types allowed in database_locations."
+  type        = list(string)
+  default     = ["Microsoft.DBforPostgreSQL/flexibleServers"]
+}
+
 variable "network_cost_exempt_resource_groups" {
   description = "Resource groups where a VNet Container Apps environment, a Standard load balancer or a private endpoint is allowed: the throwaway network tests. The -infra group is created by Container Apps itself."
   type        = list(string)

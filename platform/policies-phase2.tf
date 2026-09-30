@@ -21,7 +21,8 @@ data "azurerm_resource_group" "prod" {
 }
 
 # Allowed regions: Germany West Central and global for everything, the Static Web Apps regions for that type only,
-# and the compute region for the Container Apps types only (ADR 8).
+# the compute region for the Container Apps types only (ADR 8), and the database region for PostgreSQL flexible
+# servers only (ADR 9).
 # Replaced allowed-locations (removed in PR #21, ADR 3), which allowed eastus2, westeurope, swedencentral and
 # northeurope for every type.
 resource "azurerm_policy_definition" "allowed_locations" {
@@ -36,6 +37,8 @@ resource "azurerm_policy_definition" "allowed_locations" {
     staticSiteLocations    = { type = "Array", defaultValue = ["eastus2", "westeurope"], metadata = { displayName = "Allowed locations for Static Web Apps" } }
     computeLocations       = { type = "Array", defaultValue = ["swedencentral", "northeurope"], metadata = { displayName = "Allowed locations for Container Apps compute" } }
     computeTypes           = { type = "Array", defaultValue = ["Microsoft.App/managedEnvironments", "Microsoft.App/containerApps", "Microsoft.App/jobs"], metadata = { displayName = "Resource types of the Container Apps compute layer" } }
+    databaseLocations      = { type = "Array", defaultValue = ["swedencentral"], metadata = { displayName = "Allowed locations for the database (ADR 9)" } }
+    databaseTypes          = { type = "Array", defaultValue = ["Microsoft.DBforPostgreSQL/flexibleServers"], metadata = { displayName = "Resource types of the database" } }
   })
 }
 
@@ -50,6 +53,8 @@ resource "azurerm_management_group_policy_assignment" "allowed_locations_v2" {
     staticSiteLocations    = { value = var.static_site_locations }
     computeLocations       = { value = var.compute_locations }
     computeTypes           = { value = var.compute_types }
+    databaseLocations      = { value = var.database_locations }
+    databaseTypes          = { value = var.database_types }
   })
 }
 
