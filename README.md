@@ -53,14 +53,13 @@ The three cost guards skip `mg-sandbox`.
 ## How changes flow
 
 1. A pull request runs four required checks: `Terraform checks` (format, validate, tflint, Checkov), `Script
-   tests`, `Leak check` and `Plan`. The plan is posted as a per-type summary of resource types and counts.
+   tests`, `Leak check` and `Plan (platform)`. The plan is posted as a per-type summary of resource types and counts.
 2. After the merge, the `Apply` workflow waits for a reviewer's approval on the `platform` environment, plans,
    applies and then plans again. The second plan must report no changes.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
 4. A weekly `Policy test` workflow validates templates that must be refused and one that must pass.
 
-Workflows pin every action to a full commit SHA and use minimal permissions. The plan and apply output (stdout)
-never goes to the log; Terraform errors (stderr) still do, and can name resources. The log is public.
+Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Errors from the platform layer are printed after redaction; layers with private configuration withhold them and print only the exit code.
 
 ## Cost guardrails
 
