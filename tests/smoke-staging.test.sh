@@ -15,7 +15,9 @@ case "$*" in
   "containerapp show"*)
     case "${AZ_MODE:-ok}" in
       ok) printf 'host.example\r\n%s\r\n' "$AZ_IMAGE" ;;
-      notfound) echo "(ResourceNotFound) The Resource could not be found" >&2; exit 3 ;;
+      notfound) n=""; prev=""; for a in "$@"; do [[ "$prev" == -n ]] && n=$a; prev=$a; done
+        echo "ERROR: (ResourceNotFound) The Resource 'Microsoft.App/containerApps/$n' under resource group 'rg-x' was not found." >&2; exit 3 ;;
+      rgnotfound) echo "ERROR: (ResourceGroupNotFound) Resource group 'rg-x' could not be found." >&2; exit 3 ;;
       error) echo "AuthorizationFailed SECRET-DETAIL" >&2; exit 1 ;;
       empty) exit 0 ;;
       none) printf 'None\nNone\n' ;;
@@ -34,6 +36,8 @@ check "$rc" 0 "placeholder images skip"; check "$(grep -c 'skipped' <<< "$out" |
 check "$(grep -c SMOKE-RAN <<< "$out" || true)" 0 "a placeholder does not run the smoke test"
 run AZ_MODE=notfound
 check "$rc" 0 "a missing app skips"; check "$(grep -c 'No apps deployed' <<< "$out" || true)" 1 "the missing app is announced"
+run AZ_MODE=rgnotfound
+check "$rc" 1 "a missing resource group fails the step"
 run AZ_MODE=error
 check "$rc" 1 "an az error fails the step"; check "$(grep -c SECRET-DETAIL <<< "$out" || true)" 0 "az error text is not printed"
 run AZ_MODE=empty

@@ -21,7 +21,8 @@ for app in web api; do
   out=$(az containerapp show -g "$rg" -n "${prefix}-${app}" \
     --query "[properties.configuration.ingress.fqdn, properties.template.containers[0].image]" -o tsv 2> "$err") || rc=$?
   if (( rc != 0 )); then
-    if grep -qiE 'ResourceNotFound|could not be found' "$err"; then missing=1; continue; fi
+    # Only the app itself missing counts; a wrong resource group or subscription has other codes and fails.
+    if grep -qE "\(ResourceNotFound\).*containerApps/${prefix}-${app}'" "$err"; then missing=1; continue; fi
     die "could not read the ${app} app"
   fi
   out=$(tr -d '\r' <<< "$out")
