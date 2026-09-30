@@ -13,7 +13,7 @@ first_error() { grep -m1 -E "Code|Message|ERROR" <<< "$1" | redact | cut -c1-300
 
 # template:expected policy assignment name
 for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-locations-v2 \
-           storage-eastus2:allowed-locations-v2 storage-westeurope:allowed-locations-v2 nat-gateway:deny-costly-types postgres-large:deny-costly-skus \
+           storage-eastus2:allowed-locations-v2 storage-swedencentral:allowed-locations-v2 nat-gateway:deny-costly-types postgres-large:deny-costly-skus \
            postgres-password-auth:deny-pg-password-auth containerapps-dedicated:deny-network-cost \
            loadbalancer-standard:deny-network-cost private-endpoint:deny-network-cost; do
   t=${pair%%:*}; want=${pair##*:}
@@ -25,7 +25,7 @@ for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-loca
   fi
 done
 
-for control in allowed-control static-site-eastus2 containerapps-env-westeurope; do
+for control in allowed-control static-site-eastus2 containerapps-env-swedencentral; do
   if out=$(az deployment group validate -g "$RG" --template-file "$dir/$control.json" -o none 2>&1); then
     echo "PASS: $control validates"
   else
