@@ -15,4 +15,11 @@ module "workload" {
   budget_amount              = var.budget_amount
   budget_start_date          = var.budget_start_date
   alert_email                = var.alert_email
+  apps_enabled               = var.apps_enabled
+  images                     = var.images
+  registry                   = var.registry
+  secrets                    = var.secrets
+  apps                       = var.apps
+  jobs                       = var.jobs
+  alerts                     = var.alerts
 }
