@@ -17,7 +17,8 @@ rc=0
 terraform "$@" > /dev/null 2> "$err" || rc=$?
 if [[ " ${TF_QUIET_OK_CODES:-0} " != *" $rc "* ]]; then
   if [[ "$mode" == redact ]]; then
-    bash "$(dirname "$0")/redact.sh" < "$err" >&2
+    # A failing redaction must never change the exit code, and raw stderr is never printed.
+    bash "${TF_QUIET_REDACT:-$(dirname "$0")/redact.sh}" < "$err" >&2 || echo "::error::redaction failed, error output withheld" >&2
   else
     echo "::error::terraform ${sub:-command} failed with exit code ${rc}. Its error output is withheld because this layer has private inputs; run the Diagnose workflow in the configuration repository for the full text." >&2
   fi

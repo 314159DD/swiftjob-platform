@@ -27,7 +27,7 @@ case "$layer" in
   *) echo "::error::unknown layer ${layer}"; exit 2 ;;
 esac
 
-q() { bash "$root/scripts/tf-quiet.sh" "$mode" -chdir="$dir" "$@"; }
+q() { local sub=$1; shift; bash "$root/scripts/tf-quiet.sh" "$mode" -chdir="$dir" "$sub" -no-color "$@"; }
 
 case "$cmd" in
   init)

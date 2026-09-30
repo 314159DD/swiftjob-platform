@@ -16,6 +16,7 @@ echo 'environment = "staging"' > "$tmp/config/staging/terraform.tfvars"
 # platform plan: lock-free, no var files, redact mode shows stderr
 : > "$FAKE_TF_LOG"; rc=0; out=$(FAKE_TF_EXIT=1 CONFIG_DIR="$tmp/config" bash "$script" plan platform 2>&1) || rc=$?
 check "$(grep -c -- '-lock=false' "$FAKE_TF_LOG")" 1 "platform plan is lock-free"
+check "$(grep -c -- 'plan -no-color' "$FAKE_TF_LOG")" 1 "no-color follows the subcommand"
 check "$(grep -c -- '-var-file' "$FAKE_TF_LOG" || true)" 0 "platform plan has no var file"
 check "$(grep -c 'bad value' <<< "$out" || true)" 1 "platform uses redact mode"
 
