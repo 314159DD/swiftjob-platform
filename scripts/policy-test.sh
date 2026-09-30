@@ -13,7 +13,7 @@ first_error() { grep -m1 -E "Code|Message|ERROR" <<< "$1" | redact | cut -c1-300
 
 # template:expected policy assignment name
 for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-locations-v2 \
-           storage-eastus2:allowed-locations-v2 storage-swedencentral:allowed-locations-v2 nat-gateway:deny-costly-types postgres-large:deny-costly-skus \
+           storage-eastus2:allowed-locations-v2 storage-swedencentral:allowed-locations-v2 postgres-francecentral:allowed-locations-v2 nat-gateway:deny-costly-types postgres-large:deny-costly-skus \
            postgres-password-auth:deny-pg-password-auth containerapps-dedicated:deny-network-cost \
            containerapps-vnet:deny-network-cost \
            loadbalancer-standard:deny-network-cost private-endpoint:deny-network-cost; do
@@ -30,7 +30,7 @@ done
 # environment, and staging holds it, so the provider refuses the control with a quota error. That error without
 # RequestDisallowedByPolicy still proves the policy let the environment through. Only these two codes count.
 quota='MaxNumberOf(Regional|Global)EnvironmentsInSubExceeded'
-for control in allowed-control static-site-eastus2 containerapps-env-swedencentral; do
+for control in allowed-control static-site-eastus2 containerapps-env-swedencentral postgres-swedencentral; do
   if out=$(az deployment group validate -g "$RG" --template-file "$dir/$control.json" -o none 2>&1); then
     echo "PASS: $control validates"
   elif [[ "$control" == containerapps-env-* ]] && ! grep -q "RequestDisallowedByPolicy" <<< "$out" && grep -qE "$quota" <<< "$out"; then

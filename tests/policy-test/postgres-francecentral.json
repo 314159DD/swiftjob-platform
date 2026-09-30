@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "apiVersion": "2024-08-01",
+      "name": "[concat('psql-pt-fc-', uniqueString(resourceGroup().id))]",
+      "location": "francecentral",
+      "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
+      "tags": { "project": "swiftjob", "env": "platform", "owner": "steven" },
+      "properties": {
+        "version": "17",
+        "storage": { "storageSizeGB": 32 },
+        "authConfig": { "activeDirectoryAuth": "Enabled", "passwordAuth": "Disabled", "tenantId": "[subscription().tenantId]" }
+      }
+    }
+  ]
+}
