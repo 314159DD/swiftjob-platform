@@ -54,7 +54,7 @@ jobs:
       - name: Verify idempotency
         run: |
           rc=0
-          terraform -chdir=platform plan -input=false -detailed-exitcode > /dev/null || rc=$?
+          terraform -chdir=platform plan -input=false -lock-timeout=5m -detailed-exitcode > /dev/null || rc=$?
           case "$rc" in
             0) echo "Second plan: no changes" | tee -a "$GITHUB_STEP_SUMMARY" ;;
             2) echo "::error::second plan still has changes"; exit 1 ;;
