@@ -152,7 +152,7 @@ check "$(count 'sign-in with a')" 0 "no sign-in check runs without the rule"
 run PG=1
 check "$(grep -c "PsqlCall.*user='swiftjob test' " "$ARGLOG")" 1 "C1: the foreign identity signs in under the display name, not the account id"
 check "$(grep -c "PsqlCall.*0d0d0d0d" "$ARGLOG")" 0 "C1: the client id from account show is never the user"
-check "$(grep -c -- "--name access-test-local-" "$ARGLOG")" 2 "M1: the rule name carries the run id prefix (create and delete)"
+check "$(grep -c -- "--name access-test-[A-Za-z0-9]*-[0-9]" "$ARGLOG")" 2 "M1: the rule name carries the run id prefix (create and delete)"
 run PG=1 PG_PROBE_USER=
 check "$rc" 1 "C1: no display name fails closed"; check "$(count 'FAIL: PG_PROBE_USER')" 1 "and says so"
 check "$(grep -c FwCreate "$ARGLOG")" 0 "no rule is opened without it"
