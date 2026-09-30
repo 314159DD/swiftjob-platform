@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Test double for az: every call is refused by Azure.
+echo "ERROR: (AuthorizationFailed) The client '11111111-2222-3333-4444-555555555555' does not have authorization" >&2
+exit 1
