@@ -7,6 +7,7 @@ module "workload" {
   source                     = "../../modules/workload"
   environment                = var.environment
   resource_group_name        = var.resource_group_name
+  compute_location           = var.compute_location
   log_analytics_workspace_id = local.central_workspace_id
   identities                 = var.identities
   blob_containers            = var.blob_containers
