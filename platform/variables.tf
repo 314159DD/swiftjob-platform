@@ -42,7 +42,7 @@ variable "budget_alert_email" {
 variable "enforce_policies" {
   description = "false = DoNotEnforce (compliance is evaluated and reported, nothing is denied or deployed). Switched to true after the compliance review."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "allowed_locations" {
