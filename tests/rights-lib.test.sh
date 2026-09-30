@@ -26,4 +26,6 @@ check "$out" "FAIL: self-grant was allowed" "an allowed grant fails the check"
 check "$(wc -l < "$CREATED_LOG" | tr -d " ")" 1 "an allowed grant is recorded even when checked as a refusal"
 grant_self "Monitoring Reader" /subscriptions/x
 check "$(wc -l < "$CREATED_LOG" | tr -d ' ')" 2 "a direct allowed grant is recorded for cleanup"
+grant_to "11111111-1111-1111-1111-111111111111" "Monitoring Metrics Publisher" /subscriptions/x
+check "$(wc -l < "$CREATED_LOG" | tr -d " ")" 3 "a grant to another principal is recorded for cleanup"
 exit $fail
