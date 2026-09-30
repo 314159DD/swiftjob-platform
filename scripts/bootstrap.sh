@@ -222,7 +222,9 @@ TESTER_DEF=$(jq -n --arg name "$TESTER_ROLE" --arg scope "$PLATFORM_RG_ID" '{
   Description: "Validate the policy test templates in the platform resource group (validate needs write per resource type).",
   Actions: ["Microsoft.Resources/deployments/validate/action", "Microsoft.Resources/deployments/read",
             "Microsoft.Storage/storageAccounts/write", "Microsoft.Network/natGateways/write",
-            "Microsoft.DBforPostgreSQL/flexibleServers/write", "Microsoft.Resources/subscriptions/resourceGroups/read"],
+            "Microsoft.DBforPostgreSQL/flexibleServers/write", "Microsoft.Resources/subscriptions/resourceGroups/read",
+            "Microsoft.Web/staticSites/write", "Microsoft.App/managedEnvironments/write", "Microsoft.Network/loadBalancers/write",
+            "Microsoft.Network/privateEndpoints/write", "Microsoft.Network/virtualNetworks/subnets/join/action"],
   AssignableScopes: [$scope]}')
 upsert_role "$TESTER_ROLE" "$TESTER_DEF" "$PLATFORM_RG_ID"
 assign "$PT_SP" ServicePrincipal "$TESTER_ROLE" "$PLATFORM_RG_ID"
