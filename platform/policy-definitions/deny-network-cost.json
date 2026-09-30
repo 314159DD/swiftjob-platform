@@ -1,0 +1,32 @@
+{
+  "if": {
+    "anyOf": [
+      {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.App/managedEnvironments" },
+          { "field": "Microsoft.App/managedEnvironments/vnetConfiguration.infrastructureSubnetId", "exists": "true" }
+        ]
+      },
+      {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.App/managedEnvironments" },
+          {
+            "count": {
+              "field": "Microsoft.App/managedEnvironments/workloadProfiles[*]",
+              "where": { "field": "Microsoft.App/managedEnvironments/workloadProfiles[*].workloadProfileType", "notEquals": "Consumption" }
+            },
+            "greater": 0
+          }
+        ]
+      },
+      {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.Network/loadBalancers" },
+          { "field": "Microsoft.Network/loadBalancers/sku.name", "equals": "Standard" }
+        ]
+      },
+      { "field": "type", "equals": "Microsoft.Network/privateEndpoints" }
+    ]
+  },
+  "then": { "effect": "deny" }
+}

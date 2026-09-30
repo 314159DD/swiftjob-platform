@@ -34,6 +34,8 @@ resource "azurerm_management_group_policy_assignment" "require_rg_tag" {
   policy_definition_id = "${local.builtin}/96670d01-0a4d-4649-9c89-2d3abc0a5025"
   enforce              = local.enforce
   parameters           = jsonencode({ tagName = { value = each.key } })
+  # Container Apps creates the infrastructure resource group of a VNet environment itself, without tags.
+  not_scopes = ["/subscriptions/${var.subscription_id}/resourceGroups/rg-swiftjob-nettest-infra"]
 }
 
 resource "azurerm_management_group_policy_assignment" "deny_storage_shared_key" {

@@ -50,3 +50,21 @@ variable "allowed_locations" {
   type        = list(string)
   default     = ["germanywestcentral", "global", "eastus2", "westeurope"]
 }
+
+variable "enforce_phase2_policies" {
+  description = "Enforcement of the policies added in phase 2. false = DoNotEnforce until the compliance review (ADR 3)."
+  type        = bool
+  default     = false
+}
+
+variable "static_site_locations" {
+  description = "Static Web Apps are not offered in Germany; only this resource type may use these regions."
+  type        = list(string)
+  default     = ["eastus2", "westeurope"]
+}
+
+variable "network_cost_exempt_resource_groups" {
+  description = "Resource groups where a VNet Container Apps environment, a Standard load balancer or a private endpoint is allowed: the throwaway network tests. The -infra group is created by Container Apps itself."
+  type        = list(string)
+  default     = ["rg-swiftjob-nettest", "rg-swiftjob-nettest-infra", "rg-cloudresume-nettest"]
+}
