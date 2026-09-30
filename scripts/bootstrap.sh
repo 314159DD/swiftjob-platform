@@ -66,15 +66,16 @@ unassign() { # principal-id role scope
 }
 
 # Creates or updates a custom role definition (assignable at the scopes named inside the JSON).
-# Two Azure behaviours shape this: `az role definition update` needs the existing role's id inside the JSON (without
-# it az reports "Role 'id' is missing", searches the current subscription only, does not find a role whose
+# Two Azure behaviours shape this: `az role definition update` needs the existing role's id and a roleName inside the
+# JSON (az 2.90 reads definition['roleName'] once an id is given). Without the id
+# az reports "Role 'id' is missing", searches the current subscription only, does not find a role whose
 # assignable scopes are resource groups, tries to create it and fails with RoleDefinitionWithSameNameExists). And a
 # new definition is not readable at once, so after a create the lookup is polled until it returns the role.
 upsert_role() { # name definition-json lookup-scope
   local existing id
   existing=$(az role definition list --name "$1" --scope "$3" --query "[0].id" -o tsv | tr -d '\r')
   if [[ -n "$existing" ]]; then
-    az role definition update -o none --role-definition "$(jq --arg id "$existing" '. + {id: $id}' <<< "$2" | tr -d '\r')"
+    az role definition update -o none --role-definition "$(jq --arg id "$existing" '. + {id: $id, roleName: .Name}' <<< "$2" | tr -d '\r')"
     return 0
   fi
   az role definition create -o none --role-definition "$2"
