@@ -17,7 +17,7 @@ jobs:
   policy-test:
     name: Policy test
     runs-on: ubuntu-24.04
-    environment: plan
+    environment: policy-test
     permissions:
       contents: read
       id-token: write
