@@ -13,6 +13,12 @@ variable "location" {
   default     = "germanywestcentral"
 }
 
+variable "compute_location" {
+  description = "Region of the Container Apps environment and everything that runs in it. Data resources (Key Vault, storage, identities, monitoring, kill switch) stay in location. See ADR 6."
+  type        = string
+  default     = "germanywestcentral"
+}
+
 variable "resource_group_name" {
   description = "Existing resource group of the environment (created by scripts/bootstrap.sh)."
   type        = string

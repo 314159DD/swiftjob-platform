@@ -25,7 +25,7 @@ for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-loca
   fi
 done
 
-for control in allowed-control static-site-eastus2; do
+for control in allowed-control static-site-eastus2 containerapps-env-westeurope; do
   if out=$(az deployment group validate -g "$RG" --template-file "$dir/$control.json" -o none 2>&1); then
     echo "PASS: $control validates"
   else

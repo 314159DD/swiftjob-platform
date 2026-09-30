@@ -10,6 +10,12 @@ variable "environment" {
   type        = string
 }
 
+variable "compute_location" {
+  description = "Region of the Container Apps environment. Data stays in Germany West Central (ADR 6)."
+  type        = string
+  default     = "germanywestcentral"
+}
+
 variable "resource_group_name" {
   description = "Resource group created by scripts/bootstrap.sh."
   type        = string
