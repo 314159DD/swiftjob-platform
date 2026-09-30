@@ -38,7 +38,9 @@ jobs:
           terraform -chdir=modules/workload init -backend=false -input=false > /dev/null
           terraform -chdir=modules/workload test
       - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
-      - run: |
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
           tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
           for d in platform environments/staging modules/workload; do
             tflint --chdir="$d" --config="$GITHUB_WORKSPACE/.tflint.hcl" --format compact
@@ -121,13 +123,17 @@ jobs:
         env:
           LAYER: ${{ matrix.layer }}
         run: |
-          # tf-plan only reads: a layer whose state blob does not exist yet cannot be planned (the backend would write an empty state).
-          exists=$(az storage blob exists --account-name "$TF_STATE_SA" -c "$LAYER" -n "$LAYER.tfstate" --auth-mode login --query exists -o tsv | tr -d '\r')
-          if [[ "$exists" != "true" ]]; then
-            echo "::notice::${LAYER} state not created yet: first apply pending"
-            echo "${LAYER} state not created yet: first apply pending, nothing to plan." >> "$GITHUB_STEP_SUMMARY"
-            echo "missing=true" >> "$GITHUB_OUTPUT"
-          fi
+          # Exit 0: state exists. 3: no state and an empty resource group (first apply pending). Anything else fails the job.
+          rc=0
+          bash scripts/state-check.sh "$LAYER" || rc=$?
+          case "$rc" in
+            0) ;;
+            3)
+              echo "${LAYER} state not created yet and its resource group is empty: first apply pending, nothing to plan." >> "$GITHUB_STEP_SUMMARY"
+              echo "missing=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *) exit 1 ;;
+          esac
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "~1.16"
