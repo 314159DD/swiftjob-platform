@@ -25,9 +25,15 @@ for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-loca
   fi
 done
 
+# Azure evaluates policy before the resource provider's preflight. A trial subscription allows one Container Apps
+# environment, and staging holds it, so the provider refuses the control with a quota error. That error without
+# RequestDisallowedByPolicy still proves the policy let the environment through. Only these two codes count.
+quota='MaxNumberOf(Regional|Global)EnvironmentsInSubExceeded'
 for control in allowed-control static-site-eastus2 containerapps-env-swedencentral; do
   if out=$(az deployment group validate -g "$RG" --template-file "$dir/$control.json" -o none 2>&1); then
     echo "PASS: $control validates"
+  elif [[ "$control" == containerapps-env-* ]] && ! grep -q "RequestDisallowedByPolicy" <<< "$out" && grep -qE "$quota" <<< "$out"; then
+    echo "PASS: $control passes policy (provider quota refused it after the policy check)"
   else
     echo "FAIL: $control was refused, the test would pass for the wrong reason: $(first_error "$out")"; fail=1
   fi
