@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [{
+    "type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2024-08-01",
+    "name": "[concat('psql-policy-test-', uniqueString(resourceGroup().id))]", "location": "germanywestcentral",
+    "sku": { "name": "Standard_D4ds_v5", "tier": "GeneralPurpose" },
+    "tags": { "project": "swiftjob", "env": "platform", "owner": "steven" },
+    "properties": { "version": "16", "storage": { "storageSizeGB": 32 },
+      "authConfig": { "activeDirectoryAuth": "Enabled", "passwordAuth": "Disabled" } }
+  }]
+}

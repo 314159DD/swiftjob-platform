@@ -1,0 +1,31 @@
+# Weekly proof that the policies still refuse what they should. Runs ARM validation only: nothing is created.
+name: Policy test
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  policy-test:
+    name: Policy test
+    runs-on: ubuntu-24.04
+    environment: plan
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: bash scripts/policy-test.sh rg-swiftjob-platform | tee -a "$GITHUB_STEP_SUMMARY"
