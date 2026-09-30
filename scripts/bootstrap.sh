@@ -66,12 +66,25 @@ unassign() { # principal-id role scope
 }
 
 # Creates or updates a custom role definition (assignable at the scopes named inside the JSON).
+# Two Azure behaviours shape this: `az role definition update` needs the existing role's id inside the JSON (without
+# it az reports "Role 'id' is missing", searches the current subscription only, does not find a role whose
+# assignable scopes are resource groups, tries to create it and fails with RoleDefinitionWithSameNameExists). And a
+# new definition is not readable at once, so after a create the lookup is polled until it returns the role.
 upsert_role() { # name definition-json lookup-scope
-  if [[ -z "$(az role definition list --name "$1" --scope "$3" --query "[0].name" -o tsv | tr -d '\r')" ]]; then
-    az role definition create -o none --role-definition "$2"
-  else
-    az role definition update -o none --role-definition "$2"
+  local existing id
+  existing=$(az role definition list --name "$1" --scope "$3" --query "[0].id" -o tsv | tr -d '\r')
+  if [[ -n "$existing" ]]; then
+    az role definition update -o none --role-definition "$(jq --arg id "$existing" '. + {id: $id}' <<< "$2" | tr -d '\r')"
+    return 0
   fi
+  az role definition create -o none --role-definition "$2"
+  for attempt in 1 2 3 4 5 6; do
+    id=$(az role definition list --name "$1" --scope "$3" --query "[0].id" -o tsv | tr -d '\r')
+    [[ -n "$id" ]] && return 0
+    echo "  waiting for the role definition $1 (${attempt}/6)"; sleep 20
+  done
+  echo "Role definition $1 not readable after create." >&2
+  return 1
 }
 
 step "Resource providers (the provider block has resource_provider_registrations = none)"
