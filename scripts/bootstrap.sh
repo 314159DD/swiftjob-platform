@@ -151,8 +151,8 @@ if [[ -n "$(az role definition list --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID"
   if [[ "$(az role assignment list --assignee "$PLAN_SP" --role "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "length(@)" -o tsv)" != "0" ]]; then
     az role assignment delete --assignee "$PLAN_SP" --role "$OLD_ROLE" --scope "$PLATFORM_RG_ID" -o none
   fi
-  if [[ "$(az role assignment list --role "$OLD_ROLE" --all --query "length(@)" -o tsv)" == "0" ]]; then
-    az role definition delete --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID" -o none
+  if [[ "$(az role assignment list --all --query "[?roleDefinitionName=='$OLD_ROLE'] | length(@)" -o tsv)" == "0" ]]; then
+    az role definition delete --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID" -o none       || echo "warn: could not delete role definition $OLD_ROLE yet, next run will retry" >&2
   fi
 fi
 # Validate needs write permission for every resource type in the template, like what-if. The deny policies still
