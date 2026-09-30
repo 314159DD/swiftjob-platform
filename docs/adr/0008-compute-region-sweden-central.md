@@ -43,3 +43,4 @@ own `allowed-locations` policies refused them.
   (`MaxNumberOfGlobalEnvironmentsInSubExceeded`). Until the subscription moves to pay-as-you-go, staging holds the
   only one. The one-time VNet proof (plan 02c) and production need that switch first, or the VNet proof temporarily
   replaces the staging environment.
+- PostgreSQL followed compute to Sweden Central, see [ADR 9](0009-postgresql-region-and-sign-in.md).
