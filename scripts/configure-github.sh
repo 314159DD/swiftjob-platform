@@ -7,7 +7,7 @@ REPO=${GITHUB_REPO:-314159DD/swiftjob-platform}
 VALUES=${1:?path to the bootstrap output}
 val() { grep "^$1=" "$VALUES" | cut -d= -f2; }
 
-for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM AZURE_CLIENT_ID_POLICY_TEST PIPELINE_PRINCIPAL_IDS; do
+for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM AZURE_CLIENT_ID_POLICY_TEST AZURE_CLIENT_ID_STAGING PIPELINE_PRINCIPAL_IDS; do
   if [[ -z "$(val "$key" || true)" ]]; then echo "Missing or empty value for $key in $VALUES" >&2; exit 1; fi
 done
 
@@ -46,6 +46,19 @@ if [[ -z "$(gh api "repos/$REPO/environments/policy-test/deployment-branch-polic
   gh api -X POST "repos/$REPO/environments/policy-test/deployment-branch-policies" -f name=main -f type=branch > /dev/null
 fi
 gh variable set AZURE_CLIENT_ID -R "$REPO" --env policy-test --body "$(val AZURE_CLIENT_ID_POLICY_TEST)"
+
+# staging and nettest: only main, no reviewer (staging deploys follow a merge in the private configuration repository;
+# production gets a required reviewer in plan 05).
+for env in staging nettest; do
+  gh api -X PUT "repos/$REPO/environments/$env" --input - > /dev/null <<EOF
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+EOF
+  if [[ -z "$(gh api "repos/$REPO/environments/$env/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "main") | .name')" ]]; then
+    gh api -X POST "repos/$REPO/environments/$env/deployment-branch-policies" -f name=main -f type=branch > /dev/null
+  fi
+  gh variable set AZURE_CLIENT_ID -R "$REPO" --env "$env" --body "$(val AZURE_CLIENT_ID_STAGING)"
+done
+gh variable set AZURE_CLIENT_ID_PLAN -R "${CONFIG_REPO:-314159DD/swiftjob-platform-config}" --body "$(val AZURE_CLIENT_ID_PLAN)"
 
 # Not set here: the owner sets BUDGET_ALERT_EMAIL and LEAK_BLOCKLIST both as Actions secrets and as
 # Dependabot secrets (`gh secret set NAME -R <repo> --app dependabot`), because Dependabot PRs do not
