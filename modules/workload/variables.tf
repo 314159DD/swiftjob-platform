@@ -48,6 +48,10 @@ variable "telemetry_publishers" {
   description = "Identities that send telemetry to Application Insights (Monitoring Metrics Publisher)."
   type        = list(string)
   default     = []
+  validation {
+    condition     = alltrue([for i in var.telemetry_publishers : contains(var.identities, i)])
+    error_message = "telemetry publishers must be listed identities"
+  }
 }
 
 variable "budget_amount" {
