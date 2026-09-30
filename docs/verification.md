@@ -16,6 +16,10 @@ that produced them. Run IDs link to GitHub Actions.
 | The leak check works | `bash tests/leak-check.test.sh`, and the `Leak check` job on every pull request |
 | The drift exit codes are mapped correctly | `bash tests/drift-exit.test.sh` |
 | The plan summary shows no names or values | `python -m pytest tests -q` |
+| `tf-plan` cannot write state | Run the `Rights test` workflow (also weekly), job `tf-plan`: an upload to a state container is refused, a list succeeds |
+| `tf-staging` cannot touch production or grant itself more | `Rights test`, job `tf-staging`: production and platform changes, a role outside the ABAC list, a self-grant of Key Vault Secrets User and a grant at subscription scope are refused; the control grants an allowed role to another identity and removes it |
+| Staging apply is idempotent | The last step of the `Apply staging` workflow: a second plan must report no changes |
+| Phase 2 policies refuse what they should | `Policy test` workflow: the phase 2 templates (Static Web App region, VNet environment, Standard load balancer, private endpoint, PostgreSQL password auth, storage in the compute region) are refused, and the controls validate |
 | The safety net for the application repositories exists | In each private application repository: `git tag -l pre-azure-2026-09-30`, `git branch --list azure-migration`, and `git bundle verify` on the offline bundle |
 
 ## 2026-09-29 to 2026-09-30: first apply and idempotency
@@ -72,6 +76,48 @@ that produced them. Run IDs link to GitHub Actions.
 
 In each of the three private application repositories the tag `pre-azure-2026-09-30` and the branch
 `azure-migration` exist. Offline bundles of the three repositories were written and verified by cloning them.
+
+## 2026-09-30: phase 2a, hardened pipeline
+
+- Task 1, plan output: Apply [36661126894](https://github.com/314159DD/swiftjob-platform/actions/runs/36661126894) after the merge of the output rules (`tf-layer.sh`, redaction): no changes.
+- Task 2, `tf-plan` reads only. Bootstrap run 7 exit 0 with the same values. `tf-plan` holds Reader on the management
+  group and the subscription and Storage Blob Data Reader on the three state containers; Storage Blob Data
+  Contributor is gone. Drift [36662273886](https://github.com/314159DD/swiftjob-platform/actions/runs/36662273886) succeeded with lock-free plans and the guard passed. Rights test
+  [36662520366](https://github.com/314159DD/swiftjob-platform/actions/runs/36662520366): 4 PASS for `tf-plan`. PR #12 planned the platform layer with the reader-only identity.
+- Task 4, `tf-staging`. Bootstrap run 12 exit 0, 4 pipeline identities. Rights test [36665621981](https://github.com/314159DD/swiftjob-platform/actions/runs/36665621981): `tf-plan` 4 PASS,
+  `tf-staging` 7 PASS (6 refusals and the control). Drift [36665623866](https://github.com/314159DD/swiftjob-platform/actions/runs/36665623866): guard passed with 4 IDs, no drift. Azure
+  accepted `PrincipalId` and `PrincipalType` in the ABAC condition.
+- Findings: the bootstrap failed twice while a new custom role was not yet readable (replication lag), so it now
+  retries; updating a role needs both the resource `id` and `roleName` with `az` 2.90.
+
+## 2026-09-30: phase 2 policies, compliance and policy tests
+
+- Task 5, before enforcement. Policy test [36668175381](https://github.com/314159DD/swiftjob-platform/actions/runs/36668175381) was red as intended: the 3 old templates passed, the 6 new
+  forbidden templates validated ("not refused") and the 2 controls passed. The private endpoint template validated
+  without a resource provider preflight failure. The compliance report for all assignments showed 0 non-compliant
+  resources.
+- Task 6, enforcement. PR #21 removed `allowed-locations`, kept `allowed-rg-locations` unchanged (the resource groups of
+  the other project live in `westeurope`, ADR 3) and set `enforce_phase2_policies = true`. Platform apply
+  [36689799328](https://github.com/314159DD/swiftjob-platform/actions/runs/36689799328) succeeded.
+- Task 6, after enforcement. Policy test `RUN_ID_POLICY_GREEN`: all phase 2 templates refused, controls valid. The A1
+  project deployed and ran its private network test under the enforced policies: `RUN_ID_A1_VERIFY`.
+
+## 2026-09-30: phase 2a, staging infrastructure
+
+- Task 8, staging apply history:
+  - [36668701517](https://github.com/314159DD/swiftjob-platform/actions/runs/36668701517): failed. The Container Apps environment could not be created in `germanywestcentral`
+    (`ManagedEnvironmentCapacityHeavyUsageError`, Azure capacity). Everything else was created. The failed
+    environment was deleted.
+  - [36686786541](https://github.com/314159DD/swiftjob-platform/actions/runs/36686786541): failed in `westeurope`. Azure blocks new customers there with a platform policy (ADR 7,
+    superseded by ADR 8).
+  - [36688617466](https://github.com/314159DD/swiftjob-platform/actions/runs/36688617466): applied with the environment `cae-swiftjob-staging` in `swedencentral`, but the verify step found
+    a second plan diff (a diagnostic setting attribute that reads back as null). PR #20 removed the attribute.
+  - [36689428551](https://github.com/314159DD/swiftjob-platform/actions/runs/36689428551): green, including the second plan with no changes. This is the first fully idempotent staging
+    apply.
+- Task 8 follow-ups (PR #22): the apply pins a private commit quietly after an ancestry check, and a missing state
+  fails when its resource group has resources. Dispatch [36690802149](https://github.com/314159DD/swiftjob-platform/actions/runs/36690802149) with a commit SHA was green and idempotent,
+  and its log held 0 hits for the private commit subject (ADR 5).
+- Cost check: nothing the staging layer created carries an hourly price (ADR 5).
 
 ## Findings during the build
 
