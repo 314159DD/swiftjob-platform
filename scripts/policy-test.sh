@@ -15,6 +15,7 @@ first_error() { grep -m1 -E "Code|Message|ERROR" <<< "$1" | redact | cut -c1-300
 for pair in storage-shared-key:deny-storage-shared-key wrong-region:allowed-locations-v2 \
            storage-eastus2:allowed-locations-v2 storage-swedencentral:allowed-locations-v2 nat-gateway:deny-costly-types postgres-large:deny-costly-skus \
            postgres-password-auth:deny-pg-password-auth containerapps-dedicated:deny-network-cost \
+           containerapps-vnet:deny-network-cost \
            loadbalancer-standard:deny-network-cost private-endpoint:deny-network-cost; do
   t=${pair%%:*}; want=${pair##*:}
   out=$(az deployment group validate -g "$RG" --template-file "$dir/$t.json" -o none 2>&1) && rc=0 || rc=$?

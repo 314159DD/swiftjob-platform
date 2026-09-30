@@ -54,3 +54,4 @@ jobs:
         env:
           TF_STATE_SA: ${{ vars.TF_STATE_SA }}
           PIPELINE_PRINCIPAL_IDS: ${{ vars.PIPELINE_PRINCIPAL_IDS }}
+          RIGHTS_TEST_USER_ID: ${{ vars.RIGHTS_TEST_USER_ID }}
