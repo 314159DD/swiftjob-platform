@@ -1,0 +1,82 @@
+# Applies the staging layer with tf-staging. Runs after a merge that changes the module or the staging root, on manual
+# dispatch from this repository, and when the private configuration repository dispatches it for a new configuration commit.
+# Nothing Terraform prints reaches this public log (scripts/tf-layer.sh, suppress mode).
+name: Apply staging
+
+on:
+  push:
+    branches: [main]
+    paths: ["modules/**", "environments/staging/**"]
+  workflow_dispatch:
+    inputs:
+      config_ref:
+        description: Commit of the private configuration repository (or main)
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: apply-staging
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply staging
+    runs-on: ubuntu-24.04
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+      TF_STATE_RG: ${{ vars.TF_STATE_RG }}
+      TF_STATE_SA: ${{ vars.TF_STATE_SA }}
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+      CONFIG_REF: ${{ inputs.config_ref || 'main' }}
+    steps:
+      - name: Check the configuration reference
+        run: |
+          if [[ ! "$CONFIG_REF" =~ ^(main|[0-9a-f]{40})$ ]]; then echo "::error::config_ref must be main or a full commit SHA"; exit 1; fi
+          echo "Configuration commit: ${CONFIG_REF}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 314159DD/swiftjob-platform-config
+          ref: ${{ env.CONFIG_REF }}
+          ssh-key: ${{ secrets.CONFIG_REPO_DEPLOY_KEY }}
+          path: config
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - name: Init
+        run: bash scripts/tf-layer.sh init staging
+      - name: Plan
+        run: |
+          bash scripts/tf-layer.sh apply-plan staging
+          bash scripts/tf-layer.sh summary staging >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+      - name: Apply
+        run: bash scripts/tf-layer.sh apply staging
+      - name: Verify idempotency
+        run: |
+          rc=0
+          bash scripts/tf-layer.sh verify staging || rc=$?
+          case "$rc" in
+            0) echo "Second plan: no changes" | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "::error::second plan still has changes"; exit 1 ;;
+            *) echo "::error::second plan failed"; exit 1 ;;
+          esac
