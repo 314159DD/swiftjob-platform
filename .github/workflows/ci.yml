@@ -103,8 +103,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Dependabot gate
+        id: gate
+        env:
+          LAYER: ${{ matrix.layer }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # The staging leg loads the private configuration, so it does not run for Dependabot pull requests (ADR 5).
+          if [[ "$LAYER" == staging && "$ACTOR" == "dependabot[bot]" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Staging plan skipped for a Dependabot pull request (it would run the bumped dependency with the private configuration). Run it after merge or on a maintainer branch." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Private configuration
-        if: matrix.layer != 'platform'
+        if: matrix.layer != 'platform' && steps.gate.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: 314159DD/swiftjob-platform-config
@@ -112,14 +123,14 @@ jobs:
           path: config
           persist-credentials: false
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        if: matrix.layer != 'platform'
+        if: matrix.layer != 'platform' && steps.gate.outputs.skip != 'true'
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: State check
         id: state
-        if: matrix.layer != 'platform'
+        if: matrix.layer != 'platform' && steps.gate.outputs.skip != 'true'
         env:
           LAYER: ${{ matrix.layer }}
         run: |
@@ -135,14 +146,15 @@ jobs:
             *) exit 1 ;;
           esac
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        if: steps.gate.outputs.skip != 'true'
         with:
           terraform_version: "~1.16"
           terraform_wrapper: false
       - name: Init
-        if: steps.state.outputs.missing != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.state.outputs.missing != 'true'
         run: bash scripts/tf-layer.sh init "${{ matrix.layer }}"
       - name: Plan
-        if: steps.state.outputs.missing != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.state.outputs.missing != 'true'
         run: |
           rc=0
           bash scripts/tf-layer.sh plan "${{ matrix.layer }}" || rc=$?
@@ -150,7 +162,7 @@ jobs:
           bash scripts/tf-layer.sh summary "${{ matrix.layer }}" > summary.md || echo "Plan summary unavailable." > summary.md
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Comment
-        if: steps.state.outputs.missing != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.state.outputs.missing != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           LAYER: ${{ matrix.layer }}

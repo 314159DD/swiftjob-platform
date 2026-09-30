@@ -23,8 +23,8 @@ own `allowed-locations` policies refused them.
   one-variable change in the private configuration and no policy change.
 - Data stays in `germanywestcentral`, unchanged from ADR 7 (Key Vault, storage, identities, Application Insights, the
   kill switch and, later, PostgreSQL).
-- Phase 1 `allowed-locations` lists both regions, because it allows regions for every type. `allowed-locations-v2`
-  narrows them to the compute types once it is enforced.
+- Phase 1 `allowed-locations` (removed in PR #21, ADR 3) listed both regions, because it allows regions for every type. `allowed-locations-v2`
+  narrowed them to the compute types once it is enforced.
 - The policy tests move with the decision: a Container Apps environment in `swedencentral` must validate, a storage
   account in `swedencentral` must be refused.
 
@@ -39,3 +39,7 @@ own `allowed-locations` policies refused them.
 - Until `allowed-locations-v2` is enforced, phase 1 lets every type use the two new regions. The phase 2 compliance
   review catches anything placed there by mistake.
 - Moving back means changing `compute_location` and re-creating the environment, as in ADR 7.
+- The trial subscription allows one Container Apps environment in total, not one per region
+  (`MaxNumberOfGlobalEnvironmentsInSubExceeded`). Until the subscription moves to pay-as-you-go, staging holds the
+  only one. The one-time VNet proof (plan 02c) and production need that switch first, or the VNet proof temporarily
+  replaces the staging environment.

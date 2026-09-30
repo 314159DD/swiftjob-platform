@@ -26,8 +26,10 @@ only read.
   blob access are off, TLS 1.2 is the minimum, blob versioning is on and soft delete keeps 30 days. Terraform
   authenticates with Entra ID only, so there is no storage key anywhere. There is one container per layer:
   `platform`, `staging` and `prod`.
-- Three identities, all GitHub OIDC federated with no secret. The subject contains the immutable owner and
-  repository IDs and names one GitHub environment, so a repository recreated under the same name would not
+- Four identities (`tf-plan`, `tf-platform`, `policy-test`, `tf-staging`), all GitHub OIDC federated with no secret.
+  The subject contains the immutable owner and repository IDs and names one GitHub environment (`tf-staging` has
+  two, `staging` and `nettest`; `tf-plan` is also trusted from the main branch of the private configuration
+  repository), so a repository recreated under the same name would not
   inherit the trust.
   - `swiftjob-tf-plan` (environment `plan`): Reader on `mg-swiftjob` and on the subscription, plus Storage Blob
     Data Reader on the three state containers. Plans run with `-lock=false`, so this identity can read state
@@ -61,5 +63,5 @@ only read.
   error is redacted (`scripts/redact.sh`) for the platform layer and withheld for layers with private inputs.
 - Adding an environment layer means adding its identity in the bootstrap (the staging and prod state
   containers already exist).
-- The three identities and the state account are not managed by Terraform. Changing them means editing the
+- The four identities and the state account are not managed by Terraform. Changing them means editing the
   bootstrap script and running it again.

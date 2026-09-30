@@ -8,6 +8,8 @@
 set -euo pipefail
 shopt -s inherit_errexit
 export MSYS_NO_PATHCONV=1
+# shellcheck source=/dev/null
+source "$(dirname "$0")/abac-expected.sh"
 
 GITHUB_REPO=${GITHUB_REPO:-314159DD/swiftjob-platform}
 LOCATION=germanywestcentral
@@ -238,7 +240,7 @@ assign "$PLATFORM_SP" ServicePrincipal "Cost Management Contributor" "/subscript
 assign "$PLATFORM_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/platform"
 # It may grant exactly two roles, to the managed identities of DeployIfNotExists policy assignments:
 # Log Analytics Contributor and Monitoring Contributor. Owner and everything else is refused.
-ALLOWED='92aaf0da-9dab-42b6-94a3-d43ce8d16293, 749f88d5-cbae-40b8-bcfc-e573ddc772fa'
+ALLOWED=$(abac_guid_list "${ABAC_PLATFORM_ROLES[@]}")
 CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED}}))"
 assign "$PLATFORM_SP" ServicePrincipal "Role Based Access Control Administrator" "$ROOT_MG_ID" "$CONDITION"
 
@@ -288,7 +290,7 @@ assign "$STAGING_SP" ServicePrincipal "Log Analytics Contributor" "${SUB_ID}/${W
 # Metrics Publisher, and the kill switch role. Excluding its own principal ID blocks the direct self-grant of Key
 # Vault Secrets User. The residual path (Contributor on the staging RG can deploy a workload whose identity holds
 # that role) is recorded in ADR 0005.
-ALLOWED_APP="4633458b-17de-408a-b874-0445c86b69e6, ba92f5b4-2d11-453d-a403-e96b0029c9fe, 2a2b9908-6ea1-4ae2-8e65-a410df84e7d1, 3913510d-42f4-4e42-8a64-420c390055eb, ${STOPPER_ID}"
+ALLOWED_APP=$(abac_guid_list "${ABAC_APP_ROLES[@]}" "$STOPPER_ID")
 APP_CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal' AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAllValues:GuidNotEquals {${STAGING_SP}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal'))"
 assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$STAGING_RG_ID" "$APP_CONDITION"
 assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$NETTEST_RG_ID" "$APP_CONDITION"
