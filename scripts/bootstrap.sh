@@ -53,6 +53,22 @@ assign() { # principal-id principal-type role scope [condition]
   return 1
 }
 
+# Removes a role assignment at exactly this scope. Harmless when absent.
+unassign() { # principal-id role scope
+  local ids id
+  ids=$(az role assignment list --assignee "$1" --role "$2" --scope "$3" --query "[?scope=='$3'].id" -o tsv | tr -d '\r')
+  for id in $ids; do az role assignment delete --ids "$id" -o none; done
+}
+
+# Creates or updates a custom role definition (assignable at the scopes named inside the JSON).
+upsert_role() { # name definition-json lookup-scope
+  if [[ -z "$(az role definition list --name "$1" --scope "$3" --query "[0].name" -o tsv | tr -d '\r')" ]]; then
+    az role definition create -o none --role-definition "$2"
+  else
+    az role definition update -o none --role-definition "$2"
+  fi
+}
+
 step "Resource providers (the provider block has resource_provider_registrations = none)"
 for ns in Microsoft.Management Microsoft.PolicyInsights Microsoft.Insights Microsoft.OperationalInsights \
           Microsoft.Storage Microsoft.Consumption Microsoft.CostManagement Microsoft.App Microsoft.ManagedIdentity \
@@ -134,18 +150,21 @@ for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP PT_APP PT_SP; do
   if [[ -z "${!v}" ]]; then echo "Identity creation failed: ${v} is empty." >&2; exit 1; fi
 done
 
-step "Roles: tf-plan (read everything, write only the state lock)"
+step "Roles: tf-plan (read everything, state included; plans are lock-free)"
 assign "$PLAN_SP" ServicePrincipal Reader "$ROOT_MG_ID"
 # Also Reader on the subscription: it must read the subscription before the owner moves it under the management group (Task 9).
 assign "$PLAN_SP" ServicePrincipal Reader "/subscriptions/${SUB}"
+# Plans run with -lock=false, so tf-plan only needs to read state. Grant the reader role first, then remove the
+# old writer role, so there is no moment without read access.
 for c in platform staging prod; do
-  assign "$PLAN_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/${c}"
+  assign "$PLAN_SP" ServicePrincipal "Storage Blob Data Reader" "${SA_ID}/blobServices/default/containers/${c}"
+  unassign "$PLAN_SP" "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/${c}"
 done
 
 step "Roles: policy-test identity (validates the forbidden templates in the platform resource group)"
 PLATFORM_RG_ID="/subscriptions/${SUB}/resourceGroups/${PLATFORM_RG}"
 # An earlier version gave tf-plan a validate-only role. ARM validate needs write permission per resource type in the
-# template (same as what-if), so that role was not enough. Remove it again, tf-plan stays read-only on Azure resources; writes only the state lock.
+# template (same as what-if), so that role was not enough. Remove it again, tf-plan stays read-only (Azure resources and state).
 OLD_ROLE=swiftjob-deployment-validator
 if [[ -n "$(az role definition list --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
   if [[ "$(az role assignment list --assignee "$PLAN_SP" --role "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "length(@)" -o tsv)" != "0" ]]; then
@@ -165,11 +184,7 @@ TESTER_DEF=$(jq -n --arg name "$TESTER_ROLE" --arg scope "$PLATFORM_RG_ID" '{
             "Microsoft.Storage/storageAccounts/write", "Microsoft.Network/natGateways/write",
             "Microsoft.DBforPostgreSQL/flexibleServers/write", "Microsoft.Resources/subscriptions/resourceGroups/read"],
   AssignableScopes: [$scope]}')
-if [[ -z "$(az role definition list --name "$TESTER_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
-  az role definition create -o none --role-definition "$TESTER_DEF"
-else
-  az role definition update -o none --role-definition "$TESTER_DEF"
-fi
+upsert_role "$TESTER_ROLE" "$TESTER_DEF" "$PLATFORM_RG_ID"
 assign "$PT_SP" ServicePrincipal "$TESTER_ROLE" "$PLATFORM_RG_ID"
 
 step "Roles: tf-platform (management groups, policy, the platform resource group, the budget)"

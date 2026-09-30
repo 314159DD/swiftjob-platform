@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Proves what a pipeline identity may NOT do (spec section 7, "Rechte-Test"), with one control per identity that
+# must still work, so the test cannot pass because everything is refused.
+# Usage (signed in as the identity under test): bash scripts/rights-test.sh <plan|staging>
+# Env: TF_STATE_SA
+set -euo pipefail
+export MSYS_NO_PATHCONV=1
+# shellcheck source=/dev/null
+source "$(dirname "$0")/expect.sh"
+who=${1:?plan or staging}
+SA=${TF_STATE_SA:?}
+SUB=$(az account show --query id -o tsv | tr -d '\r')
+SELF=$(az account get-access-token --query accessToken -o tsv | tr -d '\r' | python3 -c '
+import base64, json, sys
+p = sys.stdin.read().split(".")[1]; p += "=" * (-len(p) % 4)
+print(json.loads(base64.urlsafe_b64decode(p))["oid"])')
+STAGING_RG_ID="/subscriptions/${SUB}/resourceGroups/rg-swiftjob-staging"
+CREATED_LOG=$(mktemp)
+# Every assignment this run manages to create is recorded, so cleanup can remove it if a refusal check fails.
+grant_self() { # role scope
+  local id
+  id=$(az role assignment create --assignee-object-id "$SELF" --assignee-principal-type ServicePrincipal --role "$1" --scope "$2" --query id -o tsv | tr -d '\r')
+  echo "$id" >> "$CREATED_LOG"
+}
+# Best effort: a failing refusal check must not leave real changes behind. Errors here never change the exit code
+# and nothing raw is printed.
+cleanup() {
+  local id
+  set +e
+  az storage blob delete --account-name "$SA" -c platform -n rights-test.txt --auth-mode login -o none > /dev/null 2>&1
+  if [[ "$(az group exists -n rg-swiftjob-rights-test 2> /dev/null | tr -d '\r')" == "true" ]]; then
+    az group delete -n rg-swiftjob-rights-test --yes --no-wait > /dev/null 2>&1
+  fi
+  while read -r id; do
+    [[ -n "$id" ]] && az role assignment delete --ids "$id" -o none > /dev/null 2>&1
+  done < "$CREATED_LOG"
+  rm -f "$CREATED_LOG"
+  return 0
+}
+trap cleanup EXIT
+grant_and_remove_allowed() {
+  grant_self "Monitoring Metrics Publisher" "$STAGING_RG_ID"
+  az role assignment delete --assignee "$SELF" --role "Monitoring Metrics Publisher" --scope "$STAGING_RG_ID" -o none
+}
+
+case "$who" in
+  plan)
+    expect_refused "create a resource group" "AuthorizationFailed" \
+      az group create -n rg-swiftjob-rights-test -l germanywestcentral --tags project=swiftjob env=test owner=steven -o none || true
+    expect_refused "write to the platform state container" "AuthorizationPermissionMismatch|AuthorizationFailure" \
+      az storage blob upload --account-name "$SA" -c platform -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
+    expect_refused "grant itself a role on the subscription" "AuthorizationFailed" \
+      grant_self "Monitoring Reader" "/subscriptions/${SUB}" || true
+    expect_ok "read the platform state container" \
+      az storage blob list --account-name "$SA" -c platform --auth-mode login --num-results 1 -o none || true
+    ;;
+  staging)
+    expect_refused "change the production resource group" "AuthorizationFailed" \
+      az group update -n rg-swiftjob-prod --set tags.rightstest=1 -o none || true
+    expect_refused "change the platform resource group" "AuthorizationFailed" \
+      az group update -n rg-swiftjob-platform --set tags.rightstest=1 -o none || true
+    expect_refused "grant itself a role not on the ABAC list on staging" "AuthorizationFailed|does not have authorization" \
+      grant_self "Monitoring Reader" "$STAGING_RG_ID" || true
+    expect_refused "grant itself a role on the subscription" "AuthorizationFailed|does not have authorization" \
+      grant_self "Monitoring Reader" "/subscriptions/${SUB}" || true
+    expect_refused "write to the platform state container" "AuthorizationPermissionMismatch|AuthorizationFailure" \
+      az storage blob upload --account-name "$SA" -c platform -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
+    expect_ok "grant and remove an allowed role for a service principal" grant_and_remove_allowed || true
+    ;;
+  *) echo "usage: rights-test.sh <plan|staging>" >&2; exit 2 ;;
+esac
+expect_summary

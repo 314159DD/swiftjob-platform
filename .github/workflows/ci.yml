@@ -1,4 +1,4 @@
-# Checks every pull request. Only the Plan job signs in to Azure, with the tf-plan identity (read-only on Azure resources; writes only the state lock).
+# Checks every pull request. Only the Plan job signs in to Azure, with the tf-plan identity (read-only on Azure resources and state; plans are lock-free).
 # The plan is posted as a summary of resource types and counts; full plans are never published.
 name: CI
 
