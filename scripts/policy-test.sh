@@ -6,6 +6,8 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 RG=${1:?resource group}
 dir="$(cd "$(dirname "$0")/.." && pwd)/tests/policy-test"
+# Windows az cannot read /c/... paths (Git Bash); cygpath -m gives C:/... and is absent on Linux runners.
+if command -v cygpath > /dev/null; then dir=$(cygpath -m "$dir"); fi
 fail=0
 
 redact() { bash "$(dirname "$0")/redact.sh"; }
