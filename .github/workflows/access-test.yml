@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: access-test
+  cancel-in-progress: false
+
 defaults:
   run:
     shell: bash
@@ -18,6 +22,7 @@ jobs:
     name: Access test (staging)
     runs-on: ubuntu-24.04
     environment: staging
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write

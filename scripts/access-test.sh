@@ -28,16 +28,23 @@ anonymous_get() { # url
   echo "HTTP ${code}"
   [[ "$code" == 200 ]]
 }
+# Succeeds only when the account property is exactly the string "false" (a missing or null value fails).
+account_flag_false() { # property
+  local v
+  v=$(az storage account show -n "$SA" -g "$RG" --query "$1" -o tsv 2> /dev/null | tr -d '') || return 2
+  [[ "$v" == false ]]
+}
 anonymous_kv() { anonymous_get "https://${KV}.vault.azure.net/secrets?api-version=7.4"; }
 anonymous_list() { anonymous_get "https://${SA}.blob.core.windows.net/${CONTAINER}?restype=container&comp=list"; }
 
 expect_ok "control: the vault is reachable over the management plane" az keyvault show -n "$KV" -o none || true
-expect_refused "read secrets without a role" "ForbiddenByRbac|Forbidden" az keyvault secret list --vault-name "$KV" -o none || true
+expect_refused "read secrets without a role" "ForbiddenByRbac|Caller is not authorized to perform action"   az keyvault secret list --vault-name "$KV" -o none || true
 expect_refused "list secrets anonymously" "HTTP (401|403)" anonymous_kv || true
-expect_refused "read blobs without a role" "AuthorizationPermissionMismatch" \
-  az storage blob list --account-name "$SA" -c "$CONTAINER" --auth-mode login -o none || true
-expect_refused "read blobs with an account key" "KeyBasedAuthenticationNotPermitted" \
-  az storage blob list --account-name "$SA" -c "$CONTAINER" --account-key "$BOGUS_KEY" -o none || true
-expect_refused "list blobs anonymously" "HTTP (401|403|404|409)" anonymous_list || true
+expect_refused "read blobs without a role" "You do not have the required permissions|AuthorizationPermissionMismatch"   az storage blob list --account-name "$SA" -c "$CONTAINER" --auth-mode login -o none || true
+# A bogus account key is rejected as invalid even when shared-key access is on, so the account setting is read instead.
+expect_ok "account keys are switched off (allowSharedKeyAccess is false)" account_flag_false allowSharedKeyAccess || true
+expect_ok "public blob access is switched off (allowBlobPublicAccess is false)" account_flag_false allowBlobPublicAccess || true
+# 409 PublicAccessNotPermitted is the account-level refusal; 404 is not accepted (an open account answers it too).
+expect_refused "list blobs anonymously" "HTTP (401|403|409)" anonymous_list || true
 echo "INFO: PostgreSQL checks (password sign-in refused, foreign identities refused) start with plan 03"
 expect_summary
