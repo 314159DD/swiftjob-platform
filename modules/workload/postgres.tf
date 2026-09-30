@@ -10,7 +10,7 @@ locals {
       PGDATABASE    = var.postgres.database
       PGUSER        = azurerm_user_assigned_identity.this[id].name
       PGSSLMODE     = "verify-full"
-      PGSSLROOTCERT = "system"
+      PGSSLROOTCERT = "system" # needs libpq 16 or newer (or psycopg 3 binary wheels); older clients read it as a file path
     }
   }
   pg_refs = { for id, mi in azurerm_user_assigned_identity.this : "@principal:${id}" => "${mi.name}|${mi.principal_id}" }
@@ -40,6 +40,8 @@ resource "azurerm_postgresql_flexible_server" "this" {
     tenant_id                     = data.azurerm_client_config.current.tenant_id
   }
 
+  # No high_availability block: HA stays off (ADR 9).
+  # Before real data: block plans that delete or replace this server (CI check or CanNotDelete lock).
   lifecycle {
     ignore_changes = [zone] # Azure picks a zone; a change would recreate the server
   }
@@ -57,7 +59,7 @@ resource "azurerm_postgresql_flexible_server_active_directory_administrator" "mi
 }
 
 resource "azurerm_postgresql_flexible_server_active_directory_administrator" "owner" {
-  count               = local.pg_enabled && try(var.postgres.owner_admin, null) != null ? 1 : 0
+  count               = local.pg_enabled ? 1 : 0
   server_name         = azurerm_postgresql_flexible_server.this[0].name
   resource_group_name = data.azurerm_resource_group.this.name
   tenant_id           = data.azurerm_client_config.current.tenant_id
@@ -86,9 +88,10 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "azure" {
 # Spec 6: CPU, storage and connections of the database, to the e-mail action group.
 locals {
   pg_alerts = local.pg_enabled ? {
-    cpu         = { metric = "cpu_percent", threshold = 80, text = "CPU above 80 % for 15 minutes." }
-    storage     = { metric = "storage_percent", threshold = 80, text = "Storage above 80 %." }
-    connections = { metric = "active_connections", threshold = var.postgres.alert_connections, text = "Active connections above ${var.postgres.alert_connections}." }
+    cpu     = { metric = "cpu_percent", aggregation = "Average", threshold = 80, text = "CPU above 80 % for 15 minutes." }
+    storage = { metric = "storage_percent", aggregation = "Average", threshold = 80, text = "Storage above 80 %." }
+    # Maximum: a short saturation burst is the real failure and an average would hide it
+    connections = { metric = "active_connections", aggregation = "Maximum", threshold = var.postgres.alert_connections, text = "Active connections above ${var.postgres.alert_connections}." }
   } : {}
 }
 
@@ -104,7 +107,7 @@ resource "azurerm_monitor_metric_alert" "pg" {
   criteria {
     metric_namespace = "Microsoft.DBforPostgreSQL/flexibleServers"
     metric_name      = each.value.metric
-    aggregation      = "Average"
+    aggregation      = each.value.aggregation
     operator         = "GreaterThan"
     threshold        = each.value.threshold
   }
