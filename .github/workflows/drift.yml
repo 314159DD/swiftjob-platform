@@ -1,4 +1,4 @@
-# Nightly: does Azure still match the code? Uses the tf-plan identity (read-only on Azure resources; writes only the state lock). A red run e-mails the owner.
+# Nightly: does Azure still match the code? Uses the tf-plan identity (read-only on Azure resources and state; plans are lock-free). A red run e-mails the owner.
 name: Drift
 
 on:

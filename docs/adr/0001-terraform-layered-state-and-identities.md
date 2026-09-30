@@ -30,9 +30,11 @@ only read.
   repository IDs and names one GitHub environment, so a repository recreated under the same name would not
   inherit the trust.
   - `swiftjob-tf-plan` (environment `plan`): Reader on `mg-swiftjob` and on the subscription, plus Storage Blob
-    Data Contributor on the three state containers only (the state lock needs write). It is read-only on
-    Azure resources but has write on the state containers (for the state lock), so it is not "plan and nothing
-    else". It will be reduced to read plus lock-free plans in the next phase.
+    Data Reader on the three state containers. Plans run with `-lock=false`, so this identity can read state
+    but not change it or take a lock. A plan that runs during an apply can show changes that are about to land;
+    that is acceptable for a pull request preview and the nightly drift check. Until phase 2 it held Storage Blob
+    Data Contributor for the lock; the rights test (`scripts/rights-test.sh plan`) now proves a write is refused. A layer's state blob must exist before tf-plan can plan it: the azurerm backend
+    writes an empty state when the blob is missing. The first apply of a layer runs before its first plan by tf-plan.
   - `swiftjob-tf-platform` (environment `platform`, required reviewer, `main` only): Reader, Management Group
     Contributor and Resource Policy Contributor on `mg-swiftjob`; Contributor on `rg-swiftjob-platform`; Cost
     Management Contributor on the subscription; Storage Blob Data Contributor on the `platform` container. It
@@ -55,6 +57,8 @@ only read.
   reviewer has to approve, and the apply job runs a second plan that must report no changes.
 - Terraform output stays out of the public log. The apply job sends plan and apply output to `/dev/null` and
   writes only the per-type summary from `scripts/plan_summary.py` to the job summary.
+- Every Terraform call in a workflow goes through `scripts/tf-layer.sh`: standard output is discarded, standard
+  error is redacted (`scripts/redact.sh`) for the platform layer and withheld for layers with private inputs.
 - Adding an environment layer means adding its identity in the bootstrap (the staging and prod state
   containers already exist).
 - The three identities and the state account are not managed by Terraform. Changing them means editing the
