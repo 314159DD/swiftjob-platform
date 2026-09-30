@@ -63,7 +63,7 @@ resource "azurerm_container_app_job" "this" {
       cpu     = each.value.cpu
       memory  = each.value.memory
       dynamic "env" {
-        for_each = merge(each.value.env, {
+        for_each = merge(each.value.env, lookup(local.pg_env, each.value.identity, {}), {
           AZURE_CLIENT_ID = azurerm_user_assigned_identity.this[each.value.identity].client_id
           JOB_NAME        = each.key
         })

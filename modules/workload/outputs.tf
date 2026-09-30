@@ -78,3 +78,13 @@ output "storage_account_id" {
   description = "Storage account ID."
   value       = azurerm_storage_account.this.id
 }
+
+output "postgres_fqdn" {
+  description = "Host name of the PostgreSQL server, or null."
+  value       = try(azurerm_postgresql_flexible_server.this[0].fqdn, null)
+}
+
+output "postgres_name" {
+  description = "Name of the PostgreSQL server, or null."
+  value       = try(azurerm_postgresql_flexible_server.this[0].name, null)
+}
