@@ -15,10 +15,11 @@ resource "azurerm_container_app_environment" "this" {
 }
 
 resource "azurerm_monitor_diagnostic_setting" "environment" {
-  name                           = "to-central-workspace"
-  target_resource_id             = azurerm_container_app_environment.this.id
-  log_analytics_workspace_id     = var.log_analytics_workspace_id
-  log_analytics_destination_type = "Dedicated"
+  name                       = "to-central-workspace"
+  target_resource_id         = azurerm_container_app_environment.this.id
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+  # No log_analytics_destination_type: Azure does not store it for Container Apps environments (it reads back as
+  # null), so setting it leaves a permanent diff. The categories land in their own tables anyway.
   enabled_log {
     category = "ContainerAppConsoleLogs"
   }
