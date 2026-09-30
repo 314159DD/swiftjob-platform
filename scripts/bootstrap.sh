@@ -14,6 +14,11 @@ LOCATION=germanywestcentral
 ROOT_MG=mg-swiftjob
 STATE_RG=rg-swiftjob-tfstate
 PLATFORM_RG=rg-swiftjob-platform
+STAGING_RG=rg-swiftjob-staging
+PROD_RG=rg-swiftjob-prod
+NETTEST_RG=rg-swiftjob-nettest
+CONFIG_REPO=${CONFIG_REPO:-314159DD/swiftjob-platform-config}
+WORKSPACE_ID_SUFFIX=resourceGroups/rg-swiftjob-platform/providers/Microsoft.OperationalInsights/workspaces/log-swiftjob-platform
 TAGS=(project=swiftjob env=platform owner=steven)
 ROOT_MG_ID="/providers/Microsoft.Management/managementGroups/${ROOT_MG}"
 
@@ -72,7 +77,7 @@ upsert_role() { # name definition-json lookup-scope
 step "Resource providers (the provider block has resource_provider_registrations = none)"
 for ns in Microsoft.Management Microsoft.PolicyInsights Microsoft.Insights Microsoft.OperationalInsights \
           Microsoft.Storage Microsoft.Consumption Microsoft.CostManagement Microsoft.App Microsoft.ManagedIdentity \
-          Microsoft.KeyVault Microsoft.DBforPostgreSQL Microsoft.Network; do
+          Microsoft.KeyVault Microsoft.DBforPostgreSQL Microsoft.Network Microsoft.Logic Microsoft.Web; do
   if [[ "$ns" == "Microsoft.Management" ]]; then
     az provider register --namespace "$ns" --wait -o none
   else
@@ -93,6 +98,11 @@ remove_elevation
 step "Resource groups"
 az group create -n "$STATE_RG" -l "$LOCATION" --tags "${TAGS[@]}" -o none
 az group create -n "$PLATFORM_RG" -l "$LOCATION" --tags "${TAGS[@]}" -o none
+# Workload resource groups. Production stays empty until plan 05, but exists now so its policies (public network
+# audit) are in place before anything lands there. nettest is the throwaway VNet test of plan 02c.
+az group create -n "$STAGING_RG" -l "$LOCATION" --tags project=swiftjob env=staging owner=steven -o none
+az group create -n "$PROD_RG" -l "$LOCATION" --tags project=swiftjob env=prod owner=steven -o none
+az group create -n "$NETTEST_RG" -l "$LOCATION" --tags project=swiftjob env=nettest owner=steven -o none
 
 step "Terraform state storage (Entra auth only)"
 SA=$(az storage account list -g "$STATE_RG" --query "[0].name" -o tsv)
@@ -120,33 +130,49 @@ for c in platform staging prod; do
 done
 
 step "GitHub OIDC identities"
-REPO_JSON=$(gh api "repos/${GITHUB_REPO}")
-SUBJECT_REPO="$(jq -r '.owner.login' <<< "$REPO_JSON")@$(jq -r '.owner.id' <<< "$REPO_JSON")/$(jq -r '.name' <<< "$REPO_JSON")@$(jq -r '.id' <<< "$REPO_JSON")"
+subject_repo() { # owner/name -> "login@ownerId/name@repoId" (immutable IDs, as GitHub puts them in the subject)
+  local json
+  json=$(gh api "repos/$1")
+  printf '%s@%s/%s@%s' "$(jq -r '.owner.login' <<< "$json" | tr -d '\r')" "$(jq -r '.owner.id' <<< "$json" | tr -d '\r')" \
+    "$(jq -r '.name' <<< "$json" | tr -d '\r')" "$(jq -r '.id' <<< "$json" | tr -d '\r')"
+}
 
+federate() { # appId credential-name subject
+  if [[ -z "$(az ad app federated-credential list --id "$1" --query "[?subject=='$3'].name" -o tsv | tr -d '\r')" ]]; then
+    az ad app federated-credential create --id "$1" -o none --parameters \
+      "{\"name\":\"$2\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"subject\":\"$3\",\"audiences\":[\"api://AzureADTokenExchange\"]}"
+  fi
+}
+
+# SUBJECT_REPO is set below, before the first call; the functions are defined first on purpose.
 identity() { # display-name github-environment -> prints "appId spObjectId"
-  local app sp subject
-  app=$(az ad app list --display-name "$1" --query "[0].appId" -o tsv)
-  [[ -n "$app" ]] || app=$(az ad app create --display-name "$1" --query appId -o tsv)
-  sp=$(az ad sp list --filter "appId eq '$app'" --query "[0].id" -o tsv)
+  local app sp
+  app=$(az ad app list --display-name "$1" --query "[0].appId" -o tsv | tr -d '\r')
+  [[ -n "$app" ]] || app=$(az ad app create --display-name "$1" --query appId -o tsv | tr -d '\r')
+  sp=$(az ad sp list --filter "appId eq '$app'" --query "[0].id" -o tsv | tr -d '\r')
   if [[ -z "$sp" ]]; then
     for attempt in 1 2 3 4 5 6; do
-      sp=$(az ad sp create --id "$app" --query id -o tsv) && break
+      sp=$(az ad sp create --id "$app" --query id -o tsv | tr -d '\r') && break
       sp=""; echo "  retry ${attempt} creating the service principal" >&2; sleep 20
     done
   fi
-  subject="repo:${SUBJECT_REPO}:environment:$2"
-  if [[ -z "$(az ad app federated-credential list --id "$app" --query "[?subject=='$subject'].name" -o tsv)" ]]; then
-    az ad app federated-credential create --id "$app" -o none --parameters \
-      "{\"name\":\"github-$2\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"subject\":\"$subject\",\"audiences\":[\"api://AzureADTokenExchange\"]}"
-  fi
+  federate "$app" "github-$2" "repo:${SUBJECT_REPO}:environment:$2"
   echo "$app $sp"
 }
+
+SUBJECT_REPO=$(subject_repo "$GITHUB_REPO")
+CONFIG_SUBJECT_REPO=$(subject_repo "$CONFIG_REPO")
 
 read -r PLAN_APP PLAN_SP <<< "$(identity swiftjob-tf-plan plan)"
 read -r PLATFORM_APP PLATFORM_SP <<< "$(identity swiftjob-tf-platform platform)"
 read -r PT_APP PT_SP <<< "$(identity swiftjob-policy-test policy-test)"
+read -r STAGING_APP STAGING_SP <<< "$(identity swiftjob-tf-staging staging)"
+federate "$STAGING_APP" github-nettest "repo:${SUBJECT_REPO}:environment:nettest"
+# The private configuration repository has no environments (GitHub Free); its Diagnose workflow uses tf-plan
+# from main only.
+federate "$PLAN_APP" github-config-main "repo:${CONFIG_SUBJECT_REPO}:ref:refs/heads/main"
 
-for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP PT_APP PT_SP; do
+for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP PT_APP PT_SP STAGING_APP STAGING_SP; do
   if [[ -z "${!v}" ]]; then echo "Identity creation failed: ${v} is empty." >&2; exit 1; fi
 done
 
@@ -200,6 +226,57 @@ ALLOWED='92aaf0da-9dab-42b6-94a3-d43ce8d16293, 749f88d5-cbae-40b8-bcfc-e573ddc77
 CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED}}))"
 assign "$PLATFORM_SP" ServicePrincipal "Role Based Access Control Administrator" "$ROOT_MG_ID" "$CONDITION"
 
+step "Custom roles for the workload layers"
+SUB_ID="/subscriptions/${SUB}"
+STAGING_RG_ID="${SUB_ID}/resourceGroups/${STAGING_RG}"
+PROD_RG_ID="${SUB_ID}/resourceGroups/${PROD_RG}"
+NETTEST_RG_ID="${SUB_ID}/resourceGroups/${NETTEST_RG}"
+WORKLOAD_SCOPES=$(jq -nc --arg a "$STAGING_RG_ID" --arg b "$PROD_RG_ID" --arg c "$NETTEST_RG_ID" '[$a, $b, $c]' | tr -d '\r')
+
+# The kill switch Logic App may stop and start the container apps of its own environment and nothing else.
+upsert_role swiftjob-containerapp-stopper "$(jq -n --argjson scopes "$WORKLOAD_SCOPES" '{
+  Name: "swiftjob-containerapp-stopper",
+  Description: "Read, stop and start container apps (kill switch).",
+  Actions: ["Microsoft.App/containerApps/read", "Microsoft.App/containerApps/stop/action", "Microsoft.App/containerApps/start/action"],
+  AssignableScopes: $scopes}' | tr -d '\r')" "$STAGING_RG_ID"
+# A new role definition takes a while to be readable. An empty ID would leave ", }" in the ABAC condition below.
+STOPPER_ID=""
+for attempt in 1 2 3 4 5 6; do
+  STOPPER_ID=$(az role definition list --name swiftjob-containerapp-stopper --scope "$STAGING_RG_ID" --query "[0].name" -o tsv | tr -d '\r')
+  [[ -n "$STOPPER_ID" ]] && break
+  echo "  waiting for the role definition swiftjob-containerapp-stopper (${attempt}/6)"; sleep 20
+done
+if [[ -z "$STOPPER_ID" ]]; then echo "Role definition swiftjob-containerapp-stopper not readable." >&2; exit 1; fi
+
+# terraform plan refreshes every resource. For these types the provider calls an action that Reader does not
+# include: container app and job secrets (Key Vault references only, no values) and the kill switch trigger URL.
+upsert_role swiftjob-plan-reader "$(jq -n --argjson scopes "$WORKLOAD_SCOPES" '{
+  Name: "swiftjob-plan-reader",
+  Description: "Refresh-only actions that Reader lacks, for terraform plan of the workload layers.",
+  Actions: ["Microsoft.App/containerApps/listSecrets/action", "Microsoft.App/jobs/listSecrets/action",
+            "Microsoft.Logic/workflows/triggers/listCallbackUrl/action"],
+  AssignableScopes: $scopes}' | tr -d '\r')" "$STAGING_RG_ID"
+assign "$PLAN_SP" ServicePrincipal swiftjob-plan-reader "$STAGING_RG_ID"
+assign "$PLAN_SP" ServicePrincipal swiftjob-plan-reader "$PROD_RG_ID"
+
+step "Roles: tf-staging (the staging and nettest resource groups, its own state container)"
+assign "$STAGING_SP" ServicePrincipal Contributor "$STAGING_RG_ID"
+assign "$STAGING_SP" ServicePrincipal Contributor "$NETTEST_RG_ID"
+assign "$STAGING_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/staging"
+# Log Analytics Contributor on the central workspace also lets it change the daily cap, retention or delete the
+# workspace. Accepted for phase 2 (the nightly platform drift shows a changed cap); a narrower custom role is a
+# plan 05 item.
+assign "$STAGING_SP" ServicePrincipal "Log Analytics Contributor" "${SUB_ID}/${WORKSPACE_ID_SUFFIX}"
+# It may grant exactly the app data roles, only to service principals (managed identities, Logic App identities)
+# other than itself: Key Vault Secrets User, Storage Blob Data Contributor, Storage Blob Data Reader, Monitoring
+# Metrics Publisher, and the kill switch role. Excluding its own principal ID blocks the direct self-grant of Key
+# Vault Secrets User. The residual path (Contributor on the staging RG can deploy a workload whose identity holds
+# that role) is recorded in ADR 0005.
+ALLOWED_APP="4633458b-17de-408a-b874-0445c86b69e6, ba92f5b4-2d11-453d-a403-e96b0029c9fe, 2a2b9908-6ea1-4ae2-8e65-a410df84e7d1, 3913510d-42f4-4e42-8a64-420c390055eb, ${STOPPER_ID}"
+APP_CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal' AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAllValues:GuidNotEquals {${STAGING_SP}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal'))"
+assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$STAGING_RG_ID" "$APP_CONDITION"
+assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$NETTEST_RG_ID" "$APP_CONDITION"
+
 step "Pipeline identities hold no Owner or User Access Administrator anywhere under ${ROOT_MG}"
 # Azure makes the creator of a management group its Owner. Terraform (tf-platform) creates management groups,
 # so Azure assigns it Owner on each new one. Nothing in Terraform tracks those assignments, so drift cannot see
@@ -208,7 +285,7 @@ step "Pipeline identities hold no Owner or User Access Administrator anywhere un
 MG_NAMES=$(az account management-group show --name "$ROOT_MG" --expand --recurse -o json \
   | jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | tr -d '\r' | sort -u)
 if ! grep -qx "$ROOT_MG" <<< "$MG_NAMES"; then echo "Management group enumeration did not include ${ROOT_MG}." >&2; exit 1; fi
-for sp in "$PLAN_SP" "$PLATFORM_SP" "$PT_SP"; do
+for sp in "$PLAN_SP" "$PLATFORM_SP" "$PT_SP" "$STAGING_SP"; do
   ids=$(az role assignment list --all --assignee "$sp" --query "[?roleDefinitionName=='Owner' || roleDefinitionName=='User Access Administrator'].id" -o tsv)
   for mg in $MG_NAMES; do
     mg_ids=$(az role assignment list --assignee "$sp" --scope "/providers/Microsoft.Management/managementGroups/${mg}" \
@@ -230,5 +307,6 @@ TF_STATE_SA=${SA}
 AZURE_CLIENT_ID_PLAN=${PLAN_APP}
 AZURE_CLIENT_ID_PLATFORM=${PLATFORM_APP}
 AZURE_CLIENT_ID_POLICY_TEST=${PT_APP}
-PIPELINE_PRINCIPAL_IDS=${PLAN_SP} ${PLATFORM_SP} ${PT_SP}
+AZURE_CLIENT_ID_STAGING=${STAGING_APP}
+PIPELINE_PRINCIPAL_IDS=${PLAN_SP} ${PLATFORM_SP} ${PT_SP} ${STAGING_SP}
 EOF
