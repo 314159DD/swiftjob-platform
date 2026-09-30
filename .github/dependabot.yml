@@ -6,6 +6,12 @@ updates:
   - package-ecosystem: terraform
     directory: /platform
     schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directory: /environments/staging
+    schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directory: /modules/workload
+    schedule: { interval: weekly }
   - package-ecosystem: pip
     directory: /
     schedule: { interval: weekly }

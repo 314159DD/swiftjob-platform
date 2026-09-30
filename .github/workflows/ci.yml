@@ -29,16 +29,25 @@ jobs:
         with:
           terraform_version: "~1.16"
       - run: terraform fmt -check -recursive
-      - run: terraform -chdir=platform init -backend=false && terraform -chdir=platform validate
+      - name: Validate every root and test the module
+        run: |
+          for d in platform environments/staging; do
+            terraform -chdir="$d" init -backend=false -input=false > /dev/null
+            terraform -chdir="$d" validate
+          done
+          terraform -chdir=modules/workload init -backend=false -input=false > /dev/null
+          terraform -chdir=modules/workload test
       - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
       - run: |
           tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
-          tflint --chdir=platform --config="$GITHUB_WORKSPACE/.tflint.hcl" --format compact
+          for d in platform environments/staging modules/workload; do
+            tflint --chdir="$d" --config="$GITHUB_WORKSPACE/.tflint.hcl" --format compact
+          done
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: pip install checkov==3.3.20
-      - run: checkov -d platform --framework terraform --quiet --compact
+      - run: checkov -d platform -d modules -d environments --framework terraform --quiet --compact
 
   scripts:
     name: Script tests
