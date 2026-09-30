@@ -59,8 +59,7 @@ The three cost guards skip `mg-sandbox`.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
 4. A weekly `Policy test` workflow validates templates that must be refused and one that must pass.
 
-Workflows pin every action to a full commit SHA and use minimal permissions. The plan and apply output (stdout)
-never goes to the log; Terraform errors (stderr) still do, and can name resources. The log is public.
+Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Errors from the platform layer are printed after redaction; layers with private configuration withhold them and print only the exit code.
 
 ## Cost guardrails
 

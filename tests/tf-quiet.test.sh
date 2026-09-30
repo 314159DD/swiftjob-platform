@@ -31,6 +31,16 @@ rc=0; out=$(FAKE_TF_EXIT=2 TF_QUIET_OK_CODES="0 2" bash "$script" suppress plan 
 check "$rc" 2 "exit code 2 preserved"
 check "$out" "" "allowed code prints nothing"
 
+# a failing redactor keeps terraform's exit code and leaks no raw stderr
+printf '#!/usr/bin/env bash
+exit 9
+' > "$root/tests/.failing-redact.sh"
+rc=0; out=$(FAKE_TF_EXIT=3 TF_QUIET_REDACT="$root/tests/.failing-redact.sh" bash "$script" redact plan 2>&1) || rc=$?
+rm -f "$root/tests/.failing-redact.sh"
+check "$rc" 3 "failing redactor keeps terraform exit code"
+check "$(grep -c 'bad value' <<< "$out" || true)" 0 "failing redactor leaks no raw stderr"
+check "$(grep -c 'redaction failed' <<< "$out" || true)" 1 "failing redactor is reported"
+
 # bad mode
 rc=0; bash "$script" loud plan >/dev/null 2>&1 || rc=$?
 check "$rc" 64 "unknown mode is a usage error"
