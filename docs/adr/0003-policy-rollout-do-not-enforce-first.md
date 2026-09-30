@@ -62,7 +62,7 @@ almost nothing until there is revenue.
   templates validated, and so did the control) and green after
   ([36652775932](https://github.com/314159DD/swiftjob-platform/actions/runs/36652775932)). The test ran 15 minutes
   after the apply, because Azure takes a while to start enforcing.
-- The budget only warns. It does not stop spending. Stopping is left to per-workload limits.
+- The budget only warns. It does not stop spending. Nothing stops spending automatically yet; each workload adds its own limits in later phases.
 - Without a custom VNet, traffic to platform services crosses their public endpoints, protected by identity
   and TLS. That is a weaker position than private networking and it is a chosen trade against about 22 EUR per
   month per environment.

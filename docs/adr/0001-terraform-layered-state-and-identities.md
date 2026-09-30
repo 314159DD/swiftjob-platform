@@ -54,7 +54,7 @@ only read.
   reviewer has to approve, and the apply job runs a second plan that must report no changes.
 - Terraform output stays out of the public log. The apply job sends plan and apply output to `/dev/null` and
   writes only the per-type summary from `scripts/plan_summary.py` to the job summary.
-- Adding an environment layer means adding a container and an identity in the bootstrap, and leaves the
-  existing identities as they are.
+- Adding an environment layer means adding its identity in the bootstrap (the staging and prod state
+  containers already exist).
 - The three identities and the state account are not managed by Terraform. Changing them means editing the
   bootstrap script and running it again.
