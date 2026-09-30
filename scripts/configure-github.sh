@@ -7,11 +7,13 @@ REPO=${GITHUB_REPO:-314159DD/swiftjob-platform}
 VALUES=${1:?path to the bootstrap output}
 val() { grep "^$1=" "$VALUES" | cut -d= -f2; }
 
-for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM AZURE_CLIENT_ID_POLICY_TEST; do
+for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_CLIENT_ID_PLAN AZURE_CLIENT_ID_PLATFORM AZURE_CLIENT_ID_POLICY_TEST PIPELINE_PRINCIPAL_IDS; do
   if [[ -z "$(val "$key" || true)" ]]; then echo "Missing or empty value for $key in $VALUES" >&2; exit 1; fi
 done
 
-for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA; do
+# PIPELINE_PRINCIPAL_IDS (space-separated service principal object IDs of the three pipeline identities) is read by
+# the RBAC guard in the Drift workflow.
+for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA PIPELINE_PRINCIPAL_IDS; do
   gh variable set "$key" -R "$REPO" --body "$(val "$key")"
 done
 
@@ -22,7 +24,7 @@ fi
 
 REVIEWER_ID=$(gh api users/314159DD --jq .id)
 
-# plan: every pull request, no reviewer, read-only identity
+# plan: every pull request, no reviewer, identity read-only on Azure resources; writes only the state lock
 gh api -X PUT "repos/$REPO/environments/plan" --input - <<< '{"deployment_branch_policy": null}' > /dev/null
 gh variable set AZURE_CLIENT_ID -R "$REPO" --env plan --body "$(val AZURE_CLIENT_ID_PLAN)"
 

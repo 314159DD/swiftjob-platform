@@ -1,4 +1,4 @@
-# Nightly: does Azure still match the code? Uses the read-only tf-plan identity. A red run e-mails the owner.
+# Nightly: does Azure still match the code? Uses the tf-plan identity (read-only on Azure resources; writes only the state lock). A red run e-mails the owner.
 name: Drift
 
 on:
@@ -35,6 +35,27 @@ jobs:
       TF_VAR_budget_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: RBAC guard
+        env:
+          PIPELINE_PRINCIPAL_IDS: ${{ vars.PIPELINE_PRINCIPAL_IDS }}
+        run: |
+          read -r -a ids <<< "${PIPELINE_PRINCIPAL_IDS:-}"
+          if [[ ${#ids[@]} -ne 3 ]]; then echo "::error::PIPELINE_PRINCIPAL_IDS not set or not exactly 3 ids"; exit 1; fi
+          # Azure makes the creator of a management group its Owner. Terraform does not track that, so check it here.
+          mgs=$(az account management-group show --name mg-swiftjob --expand --recurse -o json |
+            jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | tr -d '\r' | sort -u)
+          if ! grep -qx mg-swiftjob <<< "$mgs"; then echo "::error::mg-swiftjob missing from management group list"; exit 1; fi
+          {
+            for mg in $mgs; do
+              az role assignment list --scope "/providers/Microsoft.Management/managementGroups/${mg}" -o json
+            done
+            az role assignment list --all -o json
+          } | jq -s 'add' | bash scripts/rbac-guard.sh "${ids[@]}"
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "~1.16"

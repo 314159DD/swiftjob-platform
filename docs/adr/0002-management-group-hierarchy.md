@@ -42,3 +42,6 @@ mg-swiftjob
 - `mg-platform`, `mg-prod` and `mg-nonprod` are empty until phase 7. Empty management groups cost nothing.
 - Until then, production and non-production resources share a subscription and are separated by resource
   group and by the identities in ADR 1, without a subscription boundary between them.
+- Azure makes the creator of a management group its Owner. The bootstrap removes such assignments from the
+  pipeline identities, and the nightly Drift run fails if one reappears. This applies again whenever Terraform
+  creates more management groups, for example with subscription vending.

@@ -88,3 +88,15 @@ In each of the three private application repositories the tag `pre-azure-2026-09
 - tflint ignored the repository config when run with `--chdir`. It is now run with `--config`.
 - GitHub Free has no environments or branch protection in private repositories. The repository was made
   public early, after a check that it contained no product internals, and configured then.
+
+## 2026-09-30: final review finding
+
+Azure gives the creator of a new management group Owner on it. Terraform, running as `swiftjob-tf-platform`,
+created `mg-platform`, `mg-workloads`, `mg-prod`, `mg-nonprod` and `mg-sandbox`, so the Azure Management Groups
+service principal assigned that identity Owner on each of the five. Terraform does not track these assignments,
+so the drift check could not see them. The owner removed all five assignments.
+
+The fix: `scripts/bootstrap.sh` removes Owner and User Access Administrator assignments from the three pipeline
+identities at every management group under `mg-swiftjob`. The nightly Drift workflow runs `scripts/rbac-guard.sh`
+first and fails when a pipeline identity holds Owner, User Access Administrator, or an unconditioned Role Based
+Access Control Administrator. Guard added in this change; first run recorded later.
