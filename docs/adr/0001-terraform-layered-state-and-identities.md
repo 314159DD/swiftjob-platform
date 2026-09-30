@@ -33,7 +33,8 @@ only read.
     Data Reader on the three state containers. Plans run with `-lock=false`, so this identity can read state
     but not change it or take a lock. A plan that runs during an apply can show changes that are about to land;
     that is acceptable for a pull request preview and the nightly drift check. Until phase 2 it held Storage Blob
-    Data Contributor for the lock; the rights test (`scripts/rights-test.sh plan`) now proves a write is refused.
+    Data Contributor for the lock; the rights test (`scripts/rights-test.sh plan`) now proves a write is refused. A layer's state blob must exist before tf-plan can plan it: the azurerm backend
+    writes an empty state when the blob is missing. The first apply of a layer runs before its first plan by tf-plan.
   - `swiftjob-tf-platform` (environment `platform`, required reviewer, `main` only): Reader, Management Group
     Contributor and Resource Policy Contributor on `mg-swiftjob`; Contributor on `rg-swiftjob-platform`; Cost
     Management Contributor on the subscription; Storage Blob Data Contributor on the `platform` container. It

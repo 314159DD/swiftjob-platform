@@ -5,7 +5,8 @@
 EXPECT_FAILURES=0
 _EXPECT_REDACT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/redact.sh"
 
-_expect_excerpt() { head -c 300 <<< "$1" | tr '\n' ' ' | bash "$_EXPECT_REDACT"; }
+# Redact first, then cut, so a cut can never leave part of an identifier in the output.
+_expect_excerpt() { tr '\n' ' ' <<< "$1" | bash "$_EXPECT_REDACT" | head -c 300; }
 
 expect_refused() { # name extended-regex command...
   local name=$1 regex=$2 out rc=0 match
