@@ -145,7 +145,7 @@ done
 step "Roles: policy-test identity (validates the forbidden templates in the platform resource group)"
 PLATFORM_RG_ID="/subscriptions/${SUB}/resourceGroups/${PLATFORM_RG}"
 # An earlier version gave tf-plan a validate-only role. ARM validate needs write permission per resource type in the
-# template (same as what-if), so that role was not enough. Remove it again, tf-plan stays read-only.
+# template (same as what-if), so that role was not enough. Remove it again, tf-plan stays read-only on Azure resources; writes only the state lock.
 OLD_ROLE=swiftjob-deployment-validator
 if [[ -n "$(az role definition list --name "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "[0].name" -o tsv)" ]]; then
   if [[ "$(az role assignment list --assignee "$PLAN_SP" --role "$OLD_ROLE" --scope "$PLATFORM_RG_ID" --query "length(@)" -o tsv)" != "0" ]]; then
@@ -191,7 +191,8 @@ step "Pipeline identities hold no Owner or User Access Administrator anywhere un
 # them. Remove them here. `az role assignment list --all` does not list management group scopes, so every
 # management group under the root is listed explicitly. The nightly Drift workflow runs scripts/rbac-guard.sh.
 MG_NAMES=$(az account management-group show --name "$ROOT_MG" --expand --recurse -o json \
-  | jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | sort -u)
+  | jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | tr -d '\r' | sort -u)
+if ! grep -qx "$ROOT_MG" <<< "$MG_NAMES"; then echo "Management group enumeration did not include ${ROOT_MG}." >&2; exit 1; fi
 for sp in "$PLAN_SP" "$PLATFORM_SP" "$PT_SP"; do
   ids=$(az role assignment list --all --assignee "$sp" --query "[?roleDefinitionName=='Owner' || roleDefinitionName=='User Access Administrator'].id" -o tsv)
   for mg in $MG_NAMES; do

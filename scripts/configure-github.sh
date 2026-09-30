@@ -24,7 +24,7 @@ fi
 
 REVIEWER_ID=$(gh api users/314159DD --jq .id)
 
-# plan: every pull request, no reviewer, read-only identity
+# plan: every pull request, no reviewer, identity read-only on Azure resources; writes only the state lock
 gh api -X PUT "repos/$REPO/environments/plan" --input - <<< '{"deployment_branch_policy": null}' > /dev/null
 gh variable set AZURE_CLIENT_ID -R "$REPO" --env plan --body "$(val AZURE_CLIENT_ID_PLAN)"
 
