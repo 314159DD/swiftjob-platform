@@ -101,3 +101,25 @@ jobs:
             2) echo "::error::second plan still has changes"; exit 1 ;;
             *) echo "::error::second plan failed"; exit 1 ;;
           esac
+      - name: Check the state holds no secret values
+        run: bash scripts/state-secret-check.sh staging | tee -a "$GITHUB_STEP_SUMMARY"
+      # The OIDC token of the first sign-in can expire during a long apply; sign in again.
+      - name: Sign in for the smoke test
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Smoke test
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt > /dev/null 2>&1 || true
+          app() { az containerapp show -g rg-swiftjob-staging -n "ca-swiftjob-staging-$1" --query "$2" -o tsv 2> /dev/null | tr -d '\r' || true; }
+          web=$(app web properties.configuration.ingress.fqdn); api=$(app api properties.configuration.ingress.fqdn)
+          web_image=$(app web "properties.template.containers[0].image"); api_image=$(app api "properties.template.containers[0].image")
+          if [[ -z "$web" || -z "$api" ]]; then
+            echo "No apps deployed yet, smoke test skipped" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          if [[ "$web_image" != ghcr.io/* || "$api_image" != ghcr.io/* ]]; then
+            echo "Apps do not run product images yet, smoke test skipped" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          bash scripts/smoke-test.sh "https://${web}" "https://${api}" | tee -a "$GITHUB_STEP_SUMMARY"
