@@ -11,6 +11,9 @@ on:
       - "environments/staging/**"
       - "scripts/tf-*.sh"
       - "scripts/state-check.sh"
+      - "scripts/state-secret-check.sh"
+      - "scripts/smoke-test.sh"
+      - "scripts/smoke-staging.sh"
       - "scripts/plan_summary.py"
       - ".github/workflows/apply-staging.yml"
   workflow_dispatch:
@@ -101,3 +104,14 @@ jobs:
             2) echo "::error::second plan still has changes"; exit 1 ;;
             *) echo "::error::second plan failed"; exit 1 ;;
           esac
+      - name: Check the state holds no secret values
+        run: bash scripts/state-secret-check.sh staging | tee -a "$GITHUB_STEP_SUMMARY"
+      # The OIDC token of the first sign-in can expire during a long apply; sign in again.
+      - name: Sign in for the smoke test
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Smoke test
+        run: bash scripts/smoke-staging.sh | tee -a "$GITHUB_STEP_SUMMARY"
