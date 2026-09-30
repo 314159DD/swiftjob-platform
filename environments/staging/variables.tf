@@ -134,7 +134,7 @@ variable "postgres" {
     storage_mb     = optional(number, 32768)
     database       = string
     admin_identity = string
-    owner_admin    = optional(object({ object_id = string, principal_name = string, principal_type = optional(string, "User") }))
+    owner_admin    = object({ object_id = string, principal_name = string, principal_type = optional(string, "User") })
     users          = list(string)
     # 80 % of the 35 user connections of B1ms (50 in total, 15 reserved by Azure)
     alert_connections = optional(number, 28)

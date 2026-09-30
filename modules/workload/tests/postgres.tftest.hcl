@@ -186,12 +186,16 @@ run "no_server_without_postgres" {
     condition     = length(azurerm_postgresql_flexible_server.this) == 0 && length(azurerm_monitor_metric_alert.pg) == 0 && length([for e in azurerm_container_app.this["api"].template[0].container[0].env : e if startswith(e.name, "PG")]) == 0
     error_message = "postgres = null creates no server and injects nothing"
   }
+  assert {
+    condition     = length(azurerm_postgresql_flexible_server_active_directory_administrator.migrate) == 0 && length(azurerm_postgresql_flexible_server_active_directory_administrator.owner) == 0 && length(azurerm_postgresql_flexible_server_firewall_rule.azure) == 0 && length(azurerm_postgresql_flexible_server_configuration.tls) == 0
+    error_message = "postgres = null creates no administrators, firewall rule or TLS settings"
+  }
 }
 
 run "large_sku_is_refused" {
   command = plan
   variables {
-    postgres = { location = "swedencentral", database = "appdb", admin_identity = "migrate", users = ["api"], sku_name = "GP_Standard_D2s_v3" }
+    postgres = { location = "swedencentral", database = "appdb", admin_identity = "migrate", users = ["api"], owner_admin = { object_id = "00000000-0000-0000-0000-0000000000cc", principal_name = "owner@example.invalid" }, sku_name = "GP_Standard_D2s_v3" }
   }
   expect_failures = [var.postgres]
 }
@@ -199,7 +203,61 @@ run "large_sku_is_refused" {
 run "unknown_identity_is_refused" {
   command = plan
   variables {
-    postgres = { location = "swedencentral", database = "appdb", admin_identity = "migrate", users = ["nobody"] }
+    postgres = { location = "swedencentral", database = "appdb", admin_identity = "migrate", users = ["nobody"], owner_admin = { object_id = "00000000-0000-0000-0000-0000000000cc", principal_name = "owner@example.invalid" } }
+  }
+  expect_failures = [var.postgres]
+}
+
+run "no_high_availability_and_one_firewall_rule" {
+  command = apply
+  assert {
+    condition     = length(azurerm_postgresql_flexible_server.this[0].high_availability) == 0
+    error_message = "high availability stays off (ADR 9)"
+  }
+  assert {
+    condition     = length(azurerm_postgresql_flexible_server_firewall_rule.azure) == 1 && azurerm_postgresql_flexible_server_firewall_rule.azure[0].name == "allow-azure-services"
+    error_message = "exactly the one Azure-services firewall rule"
+  }
+  assert {
+    condition     = azurerm_postgresql_flexible_server.this[0].storage_tier == "P4"
+    error_message = "fixed storage tier"
+  }
+}
+
+run "connection_settings_win_over_configured_env" {
+  command = apply
+  variables {
+    apps = {
+      api = { identity = "api", image = "mcr.microsoft.com/k8se/quickstart:latest", port = 80, cpu = 0.25, memory = "0.5Gi", env = { PGUSER = "other", PGSSLMODE = "disable" } }
+      web = { identity = "web", image = "mcr.microsoft.com/k8se/quickstart:latest", port = 80, cpu = 0.25, memory = "0.5Gi" }
+    }
+  }
+  assert {
+    condition     = one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGUSER"]) == "id-swiftjob-staging-api" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGSSLMODE"]) == "verify-full"
+    error_message = "configured PGUSER and PGSSLMODE must not override the fixed values"
+  }
+  assert {
+    condition     = one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGHOST"]) == "psql-mock.postgres.database.azure.com" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGDATABASE"]) == "appdb" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGSSLROOTCERT"]) == "system"
+    error_message = "PGHOST, PGDATABASE and PGSSLROOTCERT come from the module"
+  }
+}
+
+run "alert_aggregation_and_action_group" {
+  command = apply
+  assert {
+    condition     = azurerm_monitor_metric_alert.pg["connections"].criteria[0].aggregation == "Maximum" && azurerm_monitor_metric_alert.pg["cpu"].criteria[0].aggregation == "Average" && azurerm_monitor_metric_alert.pg["storage"].criteria[0].aggregation == "Average"
+    error_message = "connections alert on the maximum, CPU and storage on the average"
+  }
+  assert {
+    condition     = alltrue([for a in azurerm_monitor_metric_alert.pg : length(a.action) == 1])
+    error_message = "every database alert notifies the e-mail action group"
+  }
+}
+
+run "b2ms_is_refused" {
+  command = plan
+  variables {
+    postgres = { location = "swedencentral", database = "appdb", admin_identity = "migrate", users = ["api"], owner_admin = { object_id = "00000000-0000-0000-0000-0000000000cc", principal_name = "owner@example.invalid" }, sku_name = "B_Standard_B2ms" }
   }
   expect_failures = [var.postgres]
 }

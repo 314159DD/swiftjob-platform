@@ -182,15 +182,15 @@ variable "postgres" {
     storage_mb     = optional(number, 32768)
     database       = string
     admin_identity = string
-    owner_admin    = optional(object({ object_id = string, principal_name = string, principal_type = optional(string, "User") }))
+    owner_admin    = object({ object_id = string, principal_name = string, principal_type = optional(string, "User") })
     users          = list(string)
     # 80 % of the 35 user connections of B1ms (50 in total, 15 reserved by Azure)
     alert_connections = optional(number, 28)
   })
   default = null
   validation {
-    condition     = var.postgres == null || contains(["B_Standard_B1ms", "B_Standard_B2s", "B_Standard_B2ms"], try(var.postgres.sku_name, ""))
-    error_message = "postgres.sku_name must be a burstable SKU up to B2ms (cost policy)"
+    condition     = var.postgres == null || try(var.postgres.sku_name, "") == "B_Standard_B1ms"
+    error_message = "postgres.sku_name is B_Standard_B1ms (ADR 9, free-account grant); a larger SKU needs an ADR"
   }
   validation {
     condition     = var.postgres == null || try(var.postgres.storage_mb, 0) == 32768
