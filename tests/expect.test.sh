@@ -23,6 +23,11 @@ check "$out" "PASS: working call works" "expect_ok passes"
 out=$(expect_ok "broken call" refused || true)
 check "$(grep -c '11111111' <<< "$out" || true)" 0 "expect_ok failure output is redacted"
 
+# An identifier straddling character 300 must be masked whole, not cut into a fragment.
+straddle() { printf 'ERROR: %s deadbeef-1234-5678-9abc-def012345678 tail\n' "$(printf 'x%.0s' $(seq 1 285))" >&2; return 1; }
+out=$(expect_ok "straddle" straddle || true)
+check "$(grep -c 'deadbe' <<< "$out" || true)" 0 "no identifier fragment at the truncation point"
+
 EXPECT_FAILURES=0
 expect_refused "a" "AuthorizationFailed" refused > /dev/null
 rc=0; expect_summary > /dev/null || rc=$?
