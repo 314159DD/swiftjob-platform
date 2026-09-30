@@ -30,8 +30,9 @@ only read.
   repository IDs and names one GitHub environment, so a repository recreated under the same name would not
   inherit the trust.
   - `swiftjob-tf-plan` (environment `plan`): Reader on `mg-swiftjob` and on the subscription, plus Storage Blob
-    Data Contributor on the three state containers only (the state lock needs write). It can run `plan` and
-    nothing else.
+    Data Contributor on the three state containers only (the state lock needs write). It is read-only on
+    Azure resources but has write on the state containers (for the state lock), so it is not "plan and nothing
+    else". It will be reduced to read plus lock-free plans in the next phase.
   - `swiftjob-tf-platform` (environment `platform`, required reviewer, `main` only): Reader, Management Group
     Contributor and Resource Policy Contributor on `mg-swiftjob`; Contributor on `rg-swiftjob-platform`; Cost
     Management Contributor on the subscription; Storage Blob Data Contributor on the `platform` container. It
