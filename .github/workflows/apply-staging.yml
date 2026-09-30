@@ -6,7 +6,13 @@ name: Apply staging
 on:
   push:
     branches: [main]
-    paths: ["modules/**", "environments/staging/**"]
+    paths:
+      - "modules/**"
+      - "environments/staging/**"
+      - "scripts/tf-*.sh"
+      - "scripts/state-check.sh"
+      - "scripts/plan_summary.py"
+      - ".github/workflows/apply-staging.yml"
   workflow_dispatch:
     inputs:
       config_ref:
@@ -57,7 +63,9 @@ jobs:
         with:
           repository: 314159DD/swiftjob-platform-config
           ref: main
-          fetch-depth: 0
+          # A non-zero depth fetches only main. fetch-depth 0 would fetch and log every branch name of the private repository.
+          # The ancestry check below therefore fails closed for a commit older than the newest 1000 on main.
+          fetch-depth: 1000
           ssh-key: ${{ secrets.CONFIG_REPO_DEPLOY_KEY }}
           path: config
           persist-credentials: false
@@ -65,7 +73,7 @@ jobs:
         if: env.CONFIG_REF != 'main'
         run: |
           # Check out main first, then move to the commit quietly: checking out a SHA directly logs its (private) commit subject.
-          # Only commits that are already on main (reviewed) can be deployed.
+          # Only commits that are already on main can be deployed (review there is by convention, main takes direct pushes).
           if ! git -C config merge-base --is-ancestor "$CONFIG_REF" origin/main > /dev/null 2>&1; then
             echo "::error::config_ref is not on main"; exit 1
           fi

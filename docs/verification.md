@@ -16,10 +16,10 @@ that produced them. Run IDs link to GitHub Actions.
 | The leak check works | `bash tests/leak-check.test.sh`, and the `Leak check` job on every pull request |
 | The drift exit codes are mapped correctly | `bash tests/drift-exit.test.sh` |
 | The plan summary shows no names or values | `python -m pytest tests -q` |
-| `tf-plan` cannot write state | Run the `Rights test` workflow (also weekly), job `tf-plan`: an upload to a state container is refused, a list succeeds |
-| `tf-staging` cannot touch production or grant itself more | `Rights test`, job `tf-staging`: production and platform changes, a role outside the ABAC list, a self-grant of Key Vault Secrets User and a grant at subscription scope are refused; the control grants an allowed role to another identity and removes it |
+| `tf-plan` cannot write state | Run the `Rights test` workflow (also weekly), job `tf-plan`: an upload to the platform, staging and prod state containers is refused, a list succeeds |
+| `tf-staging` cannot touch production or grant itself more | `Rights test`, job `tf-staging`: production and platform changes, a role outside the ABAC list, a self-grant of Key Vault Secrets User, a grant at subscription scope, a write to the platform and production state and an allowed role granted to a user (`RIGHTS_TEST_USER_ID`) are refused; the control grants an allowed role to another identity and removes it |
 | Staging apply is idempotent | The last step of the `Apply staging` workflow: a second plan must report no changes |
-| Phase 2 policies refuse what they should | `Policy test` workflow: the phase 2 templates (Static Web App region, VNet environment, Standard load balancer, private endpoint, PostgreSQL password auth, storage in the compute region) are refused, and the controls validate |
+| Phase 2 policies refuse what they should | `Policy test` workflow: the phase 2 templates that exist (Container Apps environment with a VNet subnet, Container Apps dedicated workload profile, Standard load balancer, private endpoint, PostgreSQL password auth, storage in a region outside the allowed list and in the compute region) are refused by the named policy. Controls that must pass: the allowed template, the Static Web App template and the Container Apps template in the compute region |
 | The safety net for the application repositories exists | In each private application repository: `git tag -l pre-azure-2026-09-30`, `git branch --list azure-migration`, and `git bundle verify` on the offline bundle |
 
 ## 2026-09-29 to 2026-09-30: first apply and idempotency
@@ -120,6 +120,9 @@ In each of the three private application repositories the tag `pre-azure-2026-09
   fails when its resource group has resources. Dispatch [36690802149](https://github.com/314159DD/swiftjob-platform/actions/runs/36690802149) with a commit SHA was green and idempotent,
   and its log held 0 hits for the private commit subject (ADR 5).
 - Cost check: nothing the staging layer created carries an hourly price (ADR 5).
+- `Plan (staging)` with `tf-plan` after the staging state existed: CI run
+  [36693775325](https://github.com/314159DD/swiftjob-platform/actions/runs/36693775325) (PR #23) was green with "No changes", so the custom
+  `swiftjob-plan-reader` role needed no further action (ADR 5). The first nightly Drift with both legs is not yet recorded.
 
 ## Findings during the build
 

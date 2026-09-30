@@ -11,6 +11,8 @@ for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA AZURE_C
   if [[ -z "$(val "$key" || true)" ]]; then echo "Missing or empty value for $key in $VALUES" >&2; exit 1; fi
 done
 
+# RIGHTS_TEST_USER_ID (object ID of a user account, target of the refused user grant in the weekly rights test) is
+# set by hand: gh variable set RIGHTS_TEST_USER_ID -R "$REPO" --body <object-id>.
 # PIPELINE_PRINCIPAL_IDS (space-separated service principal object IDs of the pipeline identities) is read by
 # the RBAC guard in the Drift workflow.
 for key in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID TF_STATE_RG TF_STATE_SA PIPELINE_PRINCIPAL_IDS; do

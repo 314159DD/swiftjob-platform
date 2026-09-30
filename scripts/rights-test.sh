@@ -3,7 +3,8 @@
 # must still work, so the test cannot pass because everything is refused.
 # Usage (signed in as the identity under test): bash scripts/rights-test.sh <plan|staging>
 # Env: TF_STATE_SA; for staging also PIPELINE_PRINCIPAL_IDS (space-separated object IDs of the pipeline identities;
-# one that is not the identity under test is the target of the allowed-grant control).
+# one that is not the identity under test is the target of the allowed-grant control) and RIGHTS_TEST_USER_ID (object
+# ID of a user, target of the refused grant to a user; the test fails when it is empty).
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 # shellcheck source=/dev/null
@@ -26,7 +27,15 @@ source "$(dirname "$0")/rights-lib.sh"
 cleanup() {
   local id
   set +e
-  az storage blob delete --only-show-errors --account-name "$SA" -c platform -n rights-test.txt --auth-mode login -o none > /dev/null 2>&1
+  # A refusal check that was unexpectedly allowed must not leave its tag behind (only staging can reach these).
+  if [[ "${who:-}" == staging ]]; then
+    az group update --only-show-errors -n rg-swiftjob-prod --remove tags.rightstest -o none > /dev/null 2>&1
+    az group update --only-show-errors -n rg-swiftjob-platform --remove tags.rightstest -o none > /dev/null 2>&1
+  fi
+  local c
+  for c in platform staging prod; do
+    az storage blob delete --only-show-errors --account-name "$SA" -c "$c" -n rights-test.txt --auth-mode login -o none > /dev/null 2>&1
+  done
   if [[ "$(az group exists --only-show-errors -n rg-swiftjob-rights-test 2> /dev/null | tr -d '\r')" == "true" ]]; then
     az group delete --only-show-errors -n rg-swiftjob-rights-test --yes --no-wait > /dev/null 2>&1
   fi
@@ -45,6 +54,8 @@ case "$who" in
       az storage blob upload --only-show-errors --account-name "$SA" -c platform -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
     expect_refused "grant itself a role on the subscription" "AuthorizationFailed" \
       grant_self "$MONITORING_READER" "/subscriptions/${SUB}" || true
+    expect_refused "write to the staging state container" "AuthorizationPermissionMismatch|AuthorizationFailure|You do not have the required permissions"       az storage blob upload --only-show-errors --account-name "$SA" -c staging -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
+    expect_refused "write to the prod state container" "AuthorizationPermissionMismatch|AuthorizationFailure|You do not have the required permissions"       az storage blob upload --only-show-errors --account-name "$SA" -c prod -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
     expect_ok "read the platform state container" \
       az storage blob list --only-show-errors --account-name "$SA" -c platform --auth-mode login --num-results 1 -o none || true
     ;;
@@ -61,6 +72,8 @@ case "$who" in
       grant_self "$MONITORING_READER" "/subscriptions/${SUB}" || true
     expect_refused "write to the platform state container" "AuthorizationPermissionMismatch|AuthorizationFailure|You do not have the required permissions" \
       az storage blob upload --only-show-errors --account-name "$SA" -c platform -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
+    expect_refused "write to the prod state container" "AuthorizationPermissionMismatch|AuthorizationFailure|You do not have the required permissions"       az storage blob upload --only-show-errors --account-name "$SA" -c prod -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
+    expect_refused "grant an allowed role to a user on the staging RG" "AuthorizationFailed|does not have authorization"       grant_to_user "Monitoring Metrics Publisher" "$STAGING_RG_ID" || true
     expect_ok "grant and remove an allowed role for another service principal" grant_and_remove_allowed || true
     ;;
   *) echo "usage: rights-test.sh <plan|staging>" >&2; exit 2 ;;

@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # Helper for scripts/rights-test.sh. Needs SELF (object ID) and CREATED_LOG (file) to be set.
 
-# Tries to assign a role to a service principal. Returns az's exit status, also where errexit is off (inside
+# Tries to assign a role to a principal (a service principal unless a type is given). Returns az's exit status, also where errexit is off (inside
 # expect_refused). Every assignment that is created is recorded, so cleanup can remove it.
-grant_to() { # principal-object-id role scope
+grant_to() { # principal-object-id role scope [principal-type]
   local id rc=0
-  id=$(az role assignment create --only-show-errors --assignee-object-id "$1" --assignee-principal-type ServicePrincipal --role "$2" --scope "$3" --query id -o tsv) || rc=$?
+  id=$(az role assignment create --only-show-errors --assignee-object-id "$1" --assignee-principal-type "${4:-ServicePrincipal}" --role "$2" --scope "$3" --query id -o tsv) || rc=$?
   if (( rc != 0 )); then return "$rc"; fi
   id=${id//$'\r'/}
   if [[ -n "$id" ]]; then echo "$id" >> "$CREATED_LOG"; fi
@@ -31,4 +31,13 @@ grant_and_remove_allowed() {
   assignment=$(tail -n 1 "$CREATED_LOG")
   if [[ -z "$assignment" ]]; then echo "the grant returned no assignment ID" >&2; return 1; fi
   az role assignment delete --only-show-errors --ids "$assignment" -o none
+}
+
+# An allowed role granted to a USER. The ABAC condition allows service principals only, so this must be refused. The
+# user's object ID comes from RIGHTS_TEST_USER_ID; without it the check fails (it must never pass by being skipped).
+grant_to_user() { # role scope
+  local user=${RIGHTS_TEST_USER_ID:-}
+  user=${user//$''/}
+  if [[ -z "$user" ]]; then echo "RIGHTS_TEST_USER_ID is not set" >&2; return 1; fi
+  grant_to "$user" "$1" "$2" User
 }

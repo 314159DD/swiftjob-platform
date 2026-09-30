@@ -20,7 +20,8 @@ Data region is `germanywestcentral`; Container Apps compute runs in `swedencentr
 
 ### Identities
 
-All four use GitHub OIDC federation. There is no secret. Each is tied to one GitHub environment
+All four use GitHub OIDC federation. There is no secret. Each is tied to a GitHub environment (`tf-staging` to two, `staging` and `nettest`; `tf-plan` is also trusted from the
+main branch of the private configuration repository)
 ([ADR 1](docs/adr/0001-terraform-layered-state-and-identities.md)).
 
 | Identity | Environment | What it can do |
@@ -28,7 +29,7 @@ All four use GitHub OIDC federation. There is no secret. Each is tied to one Git
 | `swiftjob-tf-plan` | `plan` | Read on `mg-swiftjob` and the subscription, read on the three state containers (no write) and the custom `swiftjob-plan-reader` role on the workload resource groups. Plans are lock-free. Runs `terraform plan` on pull requests and for the drift check |
 | `swiftjob-tf-platform` | `platform`, required reviewer, `main` only | Applies the platform layer: management groups, policy, the platform resource group, the budget, and role assignments limited by an ABAC condition to two logging roles |
 | `swiftjob-policy-test` | `policy-test`, `main` only | Validates test templates in the platform resource group, with write on exactly the tested resource types |
-| `swiftjob-tf-staging` | `staging`, `nettest`, `main` only | Applies the staging workload layer: Contributor on the staging and network test resource groups, write on its own state container only, and role assignments limited by an ABAC condition to a short list of data roles for service principals ([ADR 5](docs/adr/0005-staging-workload-identity.md)) |
+| `swiftjob-tf-staging` | `staging`, `nettest`, `main` only | Applies the staging workload layer: Contributor on the staging and network test resource groups, write on its own state container only, Log Analytics Contributor on the central workspace, and role assignments limited by an ABAC condition to a short list of data roles for service principals ([ADR 5](docs/adr/0005-staging-workload-identity.md)) |
 
 ### Policies
 
@@ -54,8 +55,8 @@ The three cost guards skip `mg-sandbox`.
 
 ## How changes flow
 
-1. A pull request runs four required checks: `Terraform checks` (format, validate, tflint, Checkov), `Script
-   tests`, `Leak check` and `Plan (platform)`. The plan is posted as a per-type summary of resource types and counts.
+1. A pull request runs five required checks: `Terraform checks` (format, validate, tflint, Checkov), `Script
+   tests`, `Leak check`, `Plan (platform)` and `Plan (staging)`. The plan is posted as a per-type summary of resource types and counts.
 2. After the merge, the `Apply` workflow waits for a reviewer's approval on the `platform` environment, plans,
    applies and then plans again. The second plan must report no changes.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
@@ -68,7 +69,8 @@ The staging workload layer (`environments/staging`, built from `modules/workload
    private configuration repository after a merge there. Apply runs a second plan that must be empty.
 7. The nightly `Drift` workflow checks both layers.
 8. A weekly `Rights test` proves that `tf-plan` cannot write state and that `tf-staging` cannot touch production or
-   grant itself more.
+   grant itself more or grant a data role to a user. The user check needs the repository variable
+   `RIGHTS_TEST_USER_ID` (object ID of a user account, set with `gh variable set`); without it the test fails.
 
 Product configuration (names, settings, schedules, image digests) lives in a private repository. This repository
 holds only the code that consumes it ([ADR 5](docs/adr/0005-staging-workload-identity.md)).

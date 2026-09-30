@@ -14,7 +14,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 vars=()
 case "$layer" in
   platform) dir="$root/platform"; mode=redact ;;
-  nettest)  dir="$root/environments/nettest"; mode=redact ;;
+  # Every layer except platform fails closed: it may be fed from private inputs, so Terraform's stderr is never printed.
+  nettest)  dir="$root/environments/nettest"; mode=suppress ;;
   staging)
     dir="$root/environments/staging"; mode=suppress
     cfg="${CONFIG_DIR:-$root/config}/staging"
