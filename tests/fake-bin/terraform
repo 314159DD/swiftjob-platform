@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test double for terraform. Records its arguments, writes known strings to stdout and stderr, exits with FAKE_TF_EXIT.
+printf '%s\n' "$*" >> "${FAKE_TF_LOG:-/dev/null}"
+echo "STDOUT-PLAN-TEXT resource_name=vendor_api_key"
+echo "Error: bad value for secret_env in /subscriptions/11111111-2222-3333-4444-555555555555 owner a.person@example.com" >&2
+exit "${FAKE_TF_EXIT:-0}"
