@@ -13,7 +13,8 @@ expect_refused() { # name extended-regex command...
   shift 2
   out=$("$@" 2>&1) || rc=$?
   if (( rc != 0 )) && grep -Eq "$regex" <<< "$out"; then
-    match=$(grep -Eo "$regex" <<< "$out")
+    # EXPECT_LABEL replaces the matched text, for output that may carry an address or a principal name.
+    match=${EXPECT_LABEL:-$(grep -Eo "$regex" <<< "$out")}
     echo "PASS: ${name} refused (${match%%$'\n'*})"
   elif (( rc == 0 )); then
     echo "FAIL: ${name} was allowed"

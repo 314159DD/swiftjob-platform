@@ -45,4 +45,16 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - run: bash scripts/access-test.sh rg-swiftjob-staging | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Check the PostgreSQL client
+        run: psql --version
+      - name: Access test
+        env:
+          REQUIRE_POSTGRES: "0"
+          ALLOW_PROBE_RULE: "1"
+          # Display name of the tf-staging service principal; Azure matches an Entra sign-in on it.
+          PG_PROBE_USER: ${{ vars.AZURE_PROBE_PRINCIPAL_NAME }}
+        run: bash scripts/access-test.sh rg-swiftjob-staging | tee -a "$GITHUB_STEP_SUMMARY"
+      # Runs after a failure, a cancellation and a timeout: no probe rule may stay open.
+      - name: Remove leftover probe firewall rules
+        if: always()
+        run: bash scripts/access-test-cleanup.sh rg-swiftjob-staging | tee -a "$GITHUB_STEP_SUMMARY"

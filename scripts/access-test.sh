@@ -5,6 +5,9 @@
 # one control proves the identity can still see the vault on the management plane.
 # Output: one line per check. No response body, secret value or raw Azure message is printed on success; on
 # failure expect.sh prints a redacted excerpt cut to 300 characters.
+# Env: REQUIRE_POSTGRES=1 makes a missing or stopped server a failure. The PostgreSQL sign-in checks open a
+# temporary firewall rule, so they run only with ALLOW_PROBE_RULE=1 and need PG_PROBE_USER, the display name
+# of the identity running this script (Azure matches an Entra sign-in on it).
 # Usage: bash scripts/access-test.sh <resource-group>
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
@@ -45,5 +48,130 @@ expect_ok "account keys are switched off (allowSharedKeyAccess is false)" accoun
 expect_ok "public blob access is switched off (allowBlobPublicAccess is false)" account_flag_false allowBlobPublicAccess || true
 # 409 PublicAccessNotPermitted is the account-level refusal; 404 is not accepted (an open account answers it too).
 expect_refused "list blobs anonymously" "HTTP (401|403|409)" anonymous_list || true
-echo "INFO: PostgreSQL checks (password sign-in refused, foreign identities refused) start with plan 03"
+
+# PostgreSQL: Entra ID sign-in only, TLS required. The sign-in checks need a route to the server, so the test
+# opens a firewall rule for this runner's address and removes it again, also on failure. It never does that
+# unless ALLOW_PROBE_RULE=1 (CI sets it), so a local run does not open the server to the owner's address.
+# Discovery errors are withheld and fail the run closed; only an empty, successful list means "no server".
+# No psql output and no address is printed on success: every refusal is reported under a fixed label.
+fail_check() { echo "FAIL: $1"; EXPECT_FAILURES=$((EXPECT_FAILURES + 1)); }
+pg_list=$(az postgres flexible-server list -g "$RG" --query "[0].name" -o tsv 2> /dev/null) || pg_list="?"
+PG=$(tr -d '\r' <<< "$pg_list")
+RULE_PREFIX=access-test-
+RULE="${RULE_PREFIX}${GITHUB_RUN_ID:-local}-$$"
+RULE_OPEN=0
+pg_value() { # jmespath; fails when the call fails
+  local v
+  v=$(az postgres flexible-server show -n "$PG" -g "$RG" --query "$1" -o tsv 2> /dev/null) || return 2
+  tr -d '\r' <<< "$v"
+}
+pg_is() { # jmespath expected
+  local v
+  v=$(pg_value "$1") || return 2
+  [[ "$v" == "$2" ]]
+}
+pg_param_is() { # parameter expected
+  local v
+  v=$(az postgres flexible-server parameter show -s "$PG" -g "$RG" -n "$1" --query value -o tsv 2> /dev/null) || return 2
+  v=$(tr -d '\r' <<< "$v")
+  [[ "${v,,}" == "${2,,}" ]]
+}
+# Rules other than the Azure-services rule of the module; fails when the list cannot be read.
+pg_extra_rules() { # [jmespath filter]
+  local v
+  v=$(az postgres flexible-server firewall-rule list -g "$RG" -s "$PG" --query "[?${1:-name!='allow-azure-services'}].name" -o tsv 2> /dev/null) || return 2
+  tr -d '\r' <<< "$v"
+}
+# libpq conninfo value in single quotes, so a display name with spaces survives.
+conninfo_quote() { local s=${1//\\/\\\\}; s=${s//\'/\\\'}; printf "'%s'" "$s"; }
+# One sign-in attempt; prints psql's own message, which expect_refused matches and never shows on success.
+pg_signin() { # sslmode password user
+  PGPASSWORD="$2" PGCONNECT_TIMEOUT=15 psql "host=${PG_HOST} port=5432 dbname=postgres user=$(conninfo_quote "$3") sslmode=$1" -w -At -c 'select 1' < /dev/null
+}
+pg_password() { pg_signin require wrong-password-probe access-probe; }
+# Azure matches an Entra sign-in on the principal's display name (for a service principal not the client id that
+# `az account show` returns), so the name comes from PG_PROBE_USER. The token is the runner's own valid one, so the
+# only reason left for a refusal is that no role exists for that identity.
+pg_foreign() {
+  local t
+  t=$(az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv 2> /dev/null) || return 2
+  t=$(tr -d '\r' <<< "$t")
+  [[ -n "$t" ]] || return 2
+  pg_signin require "$t" "$PG_PROBE_USER"
+}
+pg_plain() { pg_signin disable wrong-password-probe access-probe; }
+# Removes the probe rule and proves it is gone: the delete must succeed and the rule must not be listed any more.
+pg_close_rule() {
+  (( RULE_OPEN == 1 )) || return 0
+  local left
+  if az postgres flexible-server firewall-rule delete -g "$RG" -s "$PG" --name "$RULE" --yes -o none 2> /dev/null \
+    && left=$(pg_extra_rules "name=='${RULE}'") && [[ -z "$left" ]]; then
+    RULE_OPEN=0
+  else
+    RULE_OPEN=0
+    fail_check "probe firewall rule not removed"
+    return 1
+  fi
+}
+pg_run_sign_in_checks() {
+  local leftover
+  # Anything besides the Azure-services rule means an earlier run left a rule behind or someone added one.
+  leftover=$(pg_extra_rules) || { fail_check "firewall rules could not be listed, sign-in checks not run"; return; }
+  if [[ -n "$leftover" ]]; then
+    fail_check "leftover firewall rule found, sign-in checks not run"
+    local n
+    while IFS= read -r n; do
+      [[ "$n" == "${RULE_PREFIX}"* ]] || continue
+      az postgres flexible-server firewall-rule delete -g "$RG" -s "$PG" --name "$n" --yes -o none 2> /dev/null \
+        || fail_check "leftover probe rule not removed"
+    done <<< "$leftover"
+    return
+  fi
+  local ip
+  ip=$(curl -s --max-time 15 https://api.ipify.org || true)
+  if [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    fail_check "runner address unknown, sign-in checks not run"; return
+  fi
+  RULE_OPEN=1
+  # set -e would end the script here without a FAIL line, so the create is checked explicitly.
+  if ! az postgres flexible-server firewall-rule create -g "$RG" -s "$PG" --name "$RULE" \
+    --start-ip-address "$ip" --end-ip-address "$ip" -o none 2> /dev/null; then
+    fail_check "probe firewall rule not created, sign-in checks not run"
+  else
+    # Password sign-in is proven off by the property check above; this only shows that a wrong password is refused.
+    EXPECT_LABEL="wrong-password sign-in" expect_refused "sign-in with a password" "password authentication failed" pg_password || true
+    # The exact refusal Azure returns for "valid token, no role" is not pinned by its documentation; only the
+    # PostgreSQL text for a missing role is accepted, so a generic authentication failure is reported as a FAIL.
+    EXPECT_LABEL="no role for the identity" expect_refused "sign-in with a foreign Entra identity" "FATAL: +role \"[^\"]+\" does not exist" pg_foreign || true
+    EXPECT_LABEL="TLS required" expect_refused "sign-in without TLS" "no pg_hba\.conf entry.*no encryption|SSL connection is required" pg_plain || true
+  fi
+  pg_close_rule || true
+}
+
+if [[ "$pg_list" == "?" ]]; then
+  fail_check "PostgreSQL server discovery failed, database checks not run"
+elif [[ -z "$PG" ]]; then
+  if [[ "${REQUIRE_POSTGRES:-0}" == 1 ]]; then fail_check "no PostgreSQL server found"
+  else echo "INFO: no PostgreSQL server in this environment, database checks skipped"; fi
+else
+  trap 'rc=$?; pg_close_rule || rc=1; exit $rc' EXIT
+  expect_ok "password sign-in is switched off (authConfig.passwordAuth is Disabled)" pg_is authConfig.passwordAuth Disabled || true
+  expect_ok "Entra sign-in is switched on (authConfig.activeDirectoryAuth is Enabled)" pg_is authConfig.activeDirectoryAuth Enabled || true
+  expect_ok "TLS is required (require_secure_transport is on)" pg_param_is require_secure_transport on || true
+  PG_STATE=$(pg_value state) || PG_STATE=""
+  PG_HOST=$(pg_value fullyQualifiedDomainName) || PG_HOST=""
+  if [[ -z "$PG_STATE" || -z "$PG_HOST" ]]; then
+    fail_check "database state or address unknown, sign-in checks not run"
+  elif [[ "$PG_STATE" != Ready ]]; then
+    if [[ "${REQUIRE_POSTGRES:-0}" == 1 ]]; then fail_check "database stopped, sign-in checks not run"
+    else echo "INFO: database stopped, sign-in checks skipped"; fi
+  elif [[ "${ALLOW_PROBE_RULE:-0}" != 1 ]]; then
+    if [[ "${REQUIRE_POSTGRES:-0}" == 1 ]]; then fail_check "sign-in checks need a probe firewall rule, set ALLOW_PROBE_RULE=1"
+    else echo "INFO: sign-in checks need a probe firewall rule, run in CI or set ALLOW_PROBE_RULE=1"; fi
+  elif [[ -z "${PG_PROBE_USER:-}" ]]; then
+    fail_check "PG_PROBE_USER (display name of the test identity) is not set, sign-in checks not run"
+  else
+    pg_run_sign_in_checks
+  fi
+fi
 expect_summary
