@@ -63,3 +63,18 @@ output "email_action_group_id" {
   description = "Action group for operations alerts."
   value       = azurerm_monitor_action_group.email.id
 }
+
+output "app_fqdns" {
+  description = "Public host names of the container apps."
+  value       = local.app_fqdn
+}
+
+output "job_names" {
+  description = "Container Apps Job resource names by key."
+  value       = { for k, j in azurerm_container_app_job.this : k => j.name }
+}
+
+output "storage_account_id" {
+  description = "Storage account ID."
+  value       = azurerm_storage_account.this.id
+}
