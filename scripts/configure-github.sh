@@ -53,7 +53,7 @@ gh variable set AZURE_CLIENT_ID -R "$REPO" --env policy-test --body "$(val AZURE
 
 # main: pull requests with green checks only, also for admins
 gh api -X PUT "repos/$REPO/branches/main/protection" --input - > /dev/null <<'EOF'
-{"required_status_checks": {"strict": true, "contexts": ["Terraform checks", "Script tests", "Leak check", "Plan"]},
+{"required_status_checks": {"strict": true, "contexts": ["Terraform checks", "Script tests", "Leak check", "Plan (platform)"]},
  "enforce_admins": true,
  "required_pull_request_reviews": {"required_approving_review_count": 0},
  "restrictions": null,
