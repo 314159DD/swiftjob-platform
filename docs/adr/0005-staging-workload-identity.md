@@ -24,8 +24,10 @@ more powerful (ADR 1)?
 - The public workflows read the private repository with a read-only deploy key (secret
   `CONFIG_REPO_DEPLOY_KEY`). The key cannot write.
 - Changes to configuration go through the private repository: a bump branch, a pull request, a merge to main, and
-  then a dispatch. The dispatch uses a fine-grained token (`PLATFORM_DISPATCH_TOKEN`) that can only start workflows
-  in the public repository. The token has an expiry date, and an expired token stops the dispatch and nothing else.
+  then a dispatch. The dispatch uses a fine-grained token (`PLATFORM_DISPATCH_TOKEN`) scoped to the public repository
+  only, with the Actions write permission. That permission starts workflows and can also cancel and re-run runs and
+  delete runs and their logs in the public repository, so the token is kept out of every other repository. The
+  token has an expiry date, and an expired token stops the dispatch and nothing else.
   The expiry date is recorded where the token is created (open item at the time of writing).
 - GitHub Free has no branch protection and no environments in a private repository. The `Diagnose` workflow of the
   private repository therefore federates by branch (main) instead of by environment.
@@ -41,8 +43,12 @@ more powerful (ADR 1)?
 
 ### Trust model of the staging pipeline
 
-- Only commits that are already on the main branch of the private repository can be deployed. The apply workflow
-  checks out the private repository at `main` with full history. For a dispatch with a specific commit it checks
+- Only commits that are already on the main branch of the private repository can be deployed. The private
+  repository is on GitHub Free without branch protection, so main accepts direct pushes and review there is by
+  convention. The apply workflow checks out the private repository at `main` with a depth of 1000 commits. A
+  non-zero depth makes actions/checkout fetch that one branch only; a full history (`fetch-depth: 0`) fetches every
+  branch and logs each branch name, which would publish workload and app names once bump branches exist. The
+  ancestry check therefore fails closed for a commit outside the newest 1000 commits of main. For a dispatch with a specific commit it checks
   that the commit is an ancestor of `main` (`git merge-base --is-ancestor`) and then pins it quietly, with all
   output discarded. A plain checkout by SHA would print the commit subject to the public log, and a private commit
   subject must not reach it. Dispatch run
@@ -79,8 +85,10 @@ No further action was needed when the staging plan was wired into the pipelines 
 it is added in the bootstrap and recorded here.
 
 The weekly rights test proves the refusals: production and platform changes, a role outside the list, a self-grant
-of Key Vault Secrets User, a grant at subscription scope, a write to the platform state. Its control grants an
-allowed role to a different identity and removes it again.
+of Key Vault Secrets User, a grant at subscription scope, writes to the platform and production state, and an
+allowed role granted to a user (the PrincipalType clause of the condition). The user's object ID is the repository
+variable `RIGHTS_TEST_USER_ID`; the test fails when it is empty. `tf-plan` is also refused writes to the staging and
+production state containers. Its control grants an allowed role to a different identity and removes it again.
 
 ### The kill switch
 
@@ -106,7 +114,18 @@ creates carries an hourly price. The central workspace keeps its 0.1 GB daily ca
 
 - Residual risk: Contributor on the staging resource group lets `tf-staging` deploy a workload whose identity holds
   Key Vault Secrets User, and so read the staging vault indirectly. The ABAC condition blocks the direct self-grant
-  only. Changes to the staging layer therefore stay behind a merge to main in the private repository.
+  only. Changes to the staging layer therefore stay behind a merge to main in the private repository (review there is by
+  convention, not enforced).
+- A configuration dispatch for a specific commit (a rollback) can be superseded: with `concurrency` and
+  `cancel-in-progress: false`, GitHub still cancels an older pending run when a newer one queues, so a later push
+  run at `main` can replace the pending dispatch while the private repository's dispatch job reports success. After
+  a rollback dispatch, check that the run for that commit actually ran (the run summary shows the configuration
+  commit).
+- `CONFIG_REPO_DEPLOY_KEY` is also a Dependabot secret, so the staging plan on a Dependabot pull request would run a
+  newly bumped action or provider with the private configuration on disk. The staging leg of the CI plan is
+  therefore skipped when the actor is `dependabot[bot]` (the check stays green and says so in the summary). SHA pins
+  and lock-file hashes narrow the exposure but do not stop a compromised upstream release, so the plan runs only
+  after the bump is merged or on a maintainer branch.
 - Residual risk: Log Analytics Contributor on the central workspace lets staging read all central logs, production
   included once it exists, and change the daily cap, retention or delete the workspace. The nightly platform drift
   shows a changed cap. To revisit with a narrower custom role before plan 05.

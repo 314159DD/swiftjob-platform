@@ -21,8 +21,9 @@ data "azurerm_resource_group" "prod" {
 }
 
 # Allowed regions: Germany West Central and global for everything, the Static Web Apps regions for that type only,
-# and the compute region for the Container Apps types only (ADR 7).
-# Replaces allowed-locations, which allows eastus2, westeurope, swedencentral and northeurope for every type.
+# and the compute region for the Container Apps types only (ADR 8).
+# Replaced allowed-locations (removed in PR #21, ADR 3), which allowed eastus2, westeurope, swedencentral and
+# northeurope for every type.
 resource "azurerm_policy_definition" "allowed_locations" {
   name                = "allowed-locations-swa"
   display_name        = "Allowed locations, with an exception for Static Web Apps"

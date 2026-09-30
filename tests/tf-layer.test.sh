@@ -26,6 +26,10 @@ check "$(grep -c -- '-lock=false' "$FAKE_TF_LOG")" 1 "staging plan is lock-free"
 check "$(grep -c -- "-var-file=$tmp/config/staging/terraform.tfvars" "$FAKE_TF_LOG")" 1 "staging plan uses the private var file"
 check "$(grep -c 'bad value' <<< "$out" || true)" 0 "staging uses suppress mode"
 
+# nettest may be fed from private inputs later: suppress mode too
+: > "$FAKE_TF_LOG"; rc=0; out=$(FAKE_TF_EXIT=1 bash "$script" plan nettest 2>&1) || rc=$?
+check "$(grep -c 'bad value' <<< "$out" || true)" 0 "nettest uses suppress mode"
+
 # images file is added when present
 echo '{"images":{}}' > "$tmp/config/staging/images.auto.tfvars.json"
 : > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" plan staging > /dev/null 2>&1 || true

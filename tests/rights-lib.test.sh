@@ -39,4 +39,12 @@ check "$(wc -l < "$CREATED_LOG" | tr -d ' ')" "$before" "a refused control grant
 # It also fails when there is no other principal to grant to.
 PIPELINE_PRINCIPAL_IDS="$SELF"
 if grant_and_remove_allowed 2> /dev/null; then check pass fail "the control fails without another principal"; else check ok ok "the control fails without another principal"; fi
+# The user grant fails without RIGHTS_TEST_USER_ID (no skip), and sends the User principal type when it is set.
+RIGHTS_TEST_USER_ID=""
+if grant_to_user "Monitoring Metrics Publisher" /subscriptions/x 2> /dev/null; then check pass fail "the user grant fails without RIGHTS_TEST_USER_ID"; else check ok ok "the user grant fails without RIGHTS_TEST_USER_ID"; fi
+az() { printf '%s ' "$@" > "$CREATED_LOG.args"; echo "/subscriptions/x/providers/Microsoft.Authorization/roleAssignments/user1"; }
+RIGHTS_TEST_USER_ID=33333333-3333-3333-3333-333333333333
+grant_to_user "Monitoring Metrics Publisher" /subscriptions/x
+check "$(grep -c -- '--assignee-principal-type User ' "$CREATED_LOG.args")" 1 "the user grant sends principal type User"
+rm -f "$CREATED_LOG.args"
 exit $fail
