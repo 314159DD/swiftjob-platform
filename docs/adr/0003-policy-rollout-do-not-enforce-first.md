@@ -89,8 +89,8 @@ rollout: assigned with `enforce_phase2_policies = false`, reviewed against the c
 - The policy test gained templates for the new policies. Before enforcement, run
   [36668175381](https://github.com/314159DD/swiftjob-platform/actions/runs/36668175381) was red as intended: the 3
   old templates passed, the 6 new forbidden templates validated and were reported "not refused", and the 2 controls
-  passed. After enforcement the test is green, run `RUN_ID_POLICY_GREEN`.
-- The A1 project deployed and ran its private network test under the enforced policies: run `RUN_ID_A1_VERIFY`.
+  passed. After enforcement, run [36691827570](https://github.com/314159DD/swiftjob-platform/actions/runs/36691827570) refused all 10 forbidden templates but reported the Container Apps control as refused: the provider rejected it because a trial subscription allows one Container Apps environment and staging holds it. Policy is evaluated before that preflight, so the test now accepts exactly that quota error when no policy refused the template (PR #23). Run [36693925274](https://github.com/314159DD/swiftjob-platform/actions/runs/36693925274) is green, 13 of 13.
+- The A1 project stays green under the enforced policies: guardrail verification [36691831989](https://github.com/314159DD/azure-cloud-resume/actions/runs/36691831989), private network test RUN_ID_A1_NETWORK.
 - `allowed-locations` (phase 1) is replaced by `allowed-locations-v2`. The old assignment allowed the compute and
   Static Web Apps regions for every type. The v2 assignment allows them only for the types that need them. It was
   removed in PR #21, platform apply
