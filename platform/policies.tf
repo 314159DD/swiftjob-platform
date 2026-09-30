@@ -8,14 +8,7 @@ locals {
   required_tags = ["project", "env", "owner"]
 }
 
-resource "azurerm_management_group_policy_assignment" "allowed_locations" {
-  name                 = "allowed-locations"
-  display_name         = "Allowed locations"
-  management_group_id  = local.root_mg_id
-  policy_definition_id = "${local.builtin}/e56962a6-4747-49cd-b67b-bf8b01975c4c"
-  enforce              = local.enforce
-  parameters           = jsonencode({ listOfAllowedLocations = { value = var.allowed_locations } })
-}
+# The old region assignment for every type is gone: allowed-locations-v2 (policies-phase2.tf) replaces it.
 
 resource "azurerm_management_group_policy_assignment" "allowed_rg_locations" {
   name                 = "allowed-rg-locations"

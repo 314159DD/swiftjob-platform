@@ -46,7 +46,7 @@ variable "enforce_policies" {
 }
 
 variable "allowed_locations" {
-  description = "Regions resources may use. eastus2 and westeurope are for Static Web Apps, which are not offered in Germany; swedencentral and northeurope are for Container Apps compute (ADR 8)."
+  description = "Regions resource groups may use (only the old assignment for resource groups still reads this). Resource regions are set by allowed-locations-v2. westeurope stays because the cloud resume groups live there (ADR 3)."
   type        = list(string)
   default     = ["germanywestcentral", "global", "eastus2", "westeurope", "swedencentral", "northeurope"]
 }
@@ -54,7 +54,7 @@ variable "allowed_locations" {
 variable "enforce_phase2_policies" {
   description = "Enforcement of the policies added in phase 2. false = DoNotEnforce until the compliance review (ADR 3)."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "static_site_locations" {
