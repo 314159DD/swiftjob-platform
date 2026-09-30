@@ -5,8 +5,8 @@
     {
       "type": "Microsoft.App/managedEnvironments",
       "apiVersion": "2024-03-01",
-      "name": "cae-policy-test-we",
-      "location": "westeurope",
+      "name": "cae-policy-test-sc",
+      "location": "swedencentral",
       "tags": {
         "project": "swiftjob",
         "env": "platform",

@@ -5,8 +5,8 @@
     {
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-05-01",
-      "name": "[concat('stptwe', uniqueString(resourceGroup().id))]",
-      "location": "westeurope",
+      "name": "[concat('stptsc', uniqueString(resourceGroup().id))]",
+      "location": "swedencentral",
       "kind": "StorageV2",
       "sku": {
         "name": "Standard_LRS"
