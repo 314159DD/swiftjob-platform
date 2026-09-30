@@ -39,3 +39,7 @@ own `allowed-locations` policies refused them.
 - Until `allowed-locations-v2` is enforced, phase 1 lets every type use the two new regions. The phase 2 compliance
   review catches anything placed there by mistake.
 - Moving back means changing `compute_location` and re-creating the environment, as in ADR 7.
+- The trial subscription allows one Container Apps environment in total, not one per region
+  (`MaxNumberOfGlobalEnvironmentsInSubExceeded`). Until the subscription moves to pay-as-you-go, staging holds the
+  only one. The one-time VNet proof (plan 02c) and production need that switch first, or the VNet proof temporarily
+  replaces the staging environment.
