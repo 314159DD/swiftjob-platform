@@ -15,3 +15,20 @@ grant_to() { # principal-object-id role scope
 grant_self() { # role scope
   grant_to "$SELF" "$1" "$2"
 }
+
+# The control grants an allowed role to a service principal other than the identity under test (the ABAC condition
+# excludes the identity's own principal ID, so even an allowed role is refused as a self-grant), then removes it by
+# the ID that was just recorded. Fails when the grant or the removal fails. Needs STAGING_RG_ID and, optionally,
+# PIPELINE_PRINCIPAL_IDS.
+grant_and_remove_allowed() {
+  local other="" id assignment
+  for id in ${PIPELINE_PRINCIPAL_IDS:-}; do
+    id=${id//$'\r'/}
+    if [[ "${id,,}" != "${SELF,,}" ]]; then other=$id; break; fi
+  done
+  if [[ -z "$other" ]]; then echo "no other pipeline principal ID for the control (PIPELINE_PRINCIPAL_IDS)" >&2; return 1; fi
+  grant_to "$other" "Monitoring Metrics Publisher" "$STAGING_RG_ID" || return 1
+  assignment=$(tail -n 1 "$CREATED_LOG")
+  if [[ -z "$assignment" ]]; then echo "the grant returned no assignment ID" >&2; return 1; fi
+  az role assignment delete --only-show-errors --ids "$assignment" -o none
+}

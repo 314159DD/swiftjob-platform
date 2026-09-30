@@ -16,6 +16,8 @@ import base64, json, sys
 p = sys.stdin.read().split(".")[1]; p += "=" * (-len(p) % 4)
 print(json.loads(base64.urlsafe_b64decode(p))["oid"])')
 STAGING_RG_ID="/subscriptions/${SUB}/resourceGroups/rg-swiftjob-staging"
+# Role definition ID of Monitoring Reader: the ID form makes the write itself the thing under test.
+MONITORING_READER=43d0d8ad-25c7-4714-9337-8ba259a9fe05
 CREATED_LOG=$(mktemp)
 # shellcheck source=/dev/null
 source "$(dirname "$0")/rights-lib.sh"
@@ -35,19 +37,6 @@ cleanup() {
   return 0
 }
 trap cleanup EXIT
-# The control grants an allowed role to a service principal other than the identity under test: the ABAC condition
-# excludes the identity's own principal ID, so even an allowed role is refused as a self-grant.
-grant_and_remove_allowed() {
-  local other="" id
-  for id in ${PIPELINE_PRINCIPAL_IDS:-}; do
-    id=${id//$'\r'/}
-    if [[ "${id,,}" != "${SELF,,}" ]]; then other=$id; break; fi
-  done
-  if [[ -z "$other" ]]; then echo "no other pipeline principal ID for the control (PIPELINE_PRINCIPAL_IDS)" >&2; return 1; fi
-  grant_to "$other" "Monitoring Metrics Publisher" "$STAGING_RG_ID"
-  az role assignment delete --only-show-errors --assignee "$other" --role "Monitoring Metrics Publisher" --scope "$STAGING_RG_ID" -o none
-}
-
 case "$who" in
   plan)
     expect_refused "create a resource group" "AuthorizationFailed" \
@@ -55,7 +44,7 @@ case "$who" in
     expect_refused "write to the platform state container" "AuthorizationPermissionMismatch|AuthorizationFailure|You do not have the required permissions" \
       az storage blob upload --only-show-errors --account-name "$SA" -c platform -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
     expect_refused "grant itself a role on the subscription" "AuthorizationFailed" \
-      grant_self "Monitoring Reader" "/subscriptions/${SUB}" || true
+      grant_self "$MONITORING_READER" "/subscriptions/${SUB}" || true
     expect_ok "read the platform state container" \
       az storage blob list --only-show-errors --account-name "$SA" -c platform --auth-mode login --num-results 1 -o none || true
     ;;
@@ -69,7 +58,7 @@ case "$who" in
     expect_refused "grant itself Key Vault Secrets User on the staging RG" "AuthorizationFailed|does not have authorization" \
       grant_self "Key Vault Secrets User" "$STAGING_RG_ID" || true
     expect_refused "grant itself a role on the subscription" "AuthorizationFailed|does not have authorization" \
-      grant_self "Monitoring Reader" "/subscriptions/${SUB}" || true
+      grant_self "$MONITORING_READER" "/subscriptions/${SUB}" || true
     expect_refused "write to the platform state container" "AuthorizationPermissionMismatch|AuthorizationFailure|You do not have the required permissions" \
       az storage blob upload --only-show-errors --account-name "$SA" -c platform -n rights-test.txt --data x --overwrite --auth-mode login -o none || true
     expect_ok "grant and remove an allowed role for another service principal" grant_and_remove_allowed || true

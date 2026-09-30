@@ -269,10 +269,11 @@ assign "$STAGING_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/
 assign "$STAGING_SP" ServicePrincipal "Log Analytics Contributor" "${SUB_ID}/${WORKSPACE_ID_SUFFIX}"
 # It may grant exactly the app data roles, only to service principals (managed identities, Logic App identities)
 # other than itself: Key Vault Secrets User, Storage Blob Data Contributor, Storage Blob Data Reader, Monitoring
-# Metrics Publisher, and the kill switch role. Excluding its own principal ID stops it from reading the staging
-# vault by granting itself Key Vault Secrets User.
+# Metrics Publisher, and the kill switch role. Excluding its own principal ID blocks the direct self-grant of Key
+# Vault Secrets User. The residual path (Contributor on the staging RG can deploy a workload whose identity holds
+# that role) is recorded in ADR 0005.
 ALLOWED_APP="4633458b-17de-408a-b874-0445c86b69e6, ba92f5b4-2d11-453d-a403-e96b0029c9fe, 2a2b9908-6ea1-4ae2-8e65-a410df84e7d1, 3913510d-42f4-4e42-8a64-420c390055eb, ${STOPPER_ID}"
-APP_CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal' AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAllValues:GuidNotEquals {${STAGING_SP}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}}))"
+APP_CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal' AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAllValues:GuidNotEquals {${STAGING_SP}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal'))"
 assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$STAGING_RG_ID" "$APP_CONDITION"
 assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$NETTEST_RG_ID" "$APP_CONDITION"
 
