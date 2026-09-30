@@ -102,7 +102,7 @@ In each of the three private application repositories the tag `pre-azure-2026-09
 - Task 6, after enforcement. Policy test [36691827570](https://github.com/314159DD/swiftjob-platform/actions/runs/36691827570): all 10 forbidden templates refused, the Container Apps
   control refused by the provider quota (one environment per trial subscription). After PR #23, [36693925274](https://github.com/314159DD/swiftjob-platform/actions/runs/36693925274): 13 of
   13 PASS. A1 under the enforced policies: guardrail verification [36691831989](https://github.com/314159DD/azure-cloud-resume/actions/runs/36691831989), private network
-  test RUN_ID_A1_NETWORK.
+  test [36694018975](https://github.com/314159DD/azure-cloud-resume/actions/runs/36694018975).
 
 ## 2026-09-30: phase 2a, staging infrastructure
 
