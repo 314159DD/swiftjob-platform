@@ -29,6 +29,7 @@ jobs:
   apply:
     name: Apply staging
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     environment: staging
     permissions:
       contents: read
@@ -55,10 +56,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: 314159DD/swiftjob-platform-config
-          ref: ${{ env.CONFIG_REF }}
+          ref: main
+          fetch-depth: 0
           ssh-key: ${{ secrets.CONFIG_REPO_DEPLOY_KEY }}
           path: config
           persist-credentials: false
+      - name: Pin the configuration commit
+        if: env.CONFIG_REF != 'main'
+        run: |
+          # Check out main first, then move to the commit quietly: checking out a SHA directly logs its (private) commit subject.
+          # Only commits that are already on main (reviewed) can be deployed.
+          if ! git -C config merge-base --is-ancestor "$CONFIG_REF" origin/main > /dev/null 2>&1; then
+            echo "::error::config_ref is not on main"; exit 1
+          fi
+          if ! git -C config checkout -q --detach "$CONFIG_REF" > /dev/null 2>&1; then
+            echo "::error::could not check out config_ref"; exit 1
+          fi
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "~1.16"

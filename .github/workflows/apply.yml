@@ -23,6 +23,7 @@ jobs:
   apply:
     name: Apply platform
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     environment: platform
     permissions:
       contents: read
