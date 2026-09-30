@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[concat('stptwe', uniqueString(resourceGroup().id))]",
+      "location": "westeurope",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "tags": {
+        "project": "swiftjob",
+        "env": "platform",
+        "owner": "steven"
+      },
+      "properties": {
+        "allowSharedKeyAccess": false,
+        "minimumTlsVersion": "TLS1_2"
+      }
+    }
+  ]
+}

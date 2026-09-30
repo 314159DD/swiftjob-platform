@@ -63,6 +63,18 @@ variable "static_site_locations" {
   default     = ["eastus2", "westeurope"]
 }
 
+variable "compute_locations" {
+  description = "Regions where the Container Apps compute types may run (ADR 7). Data stays in Germany West Central."
+  type        = list(string)
+  default     = ["westeurope"]
+}
+
+variable "compute_types" {
+  description = "Resource types of the Container Apps compute layer, allowed in compute_locations."
+  type        = list(string)
+  default     = ["Microsoft.App/managedEnvironments", "Microsoft.App/containerApps", "Microsoft.App/jobs"]
+}
+
 variable "network_cost_exempt_resource_groups" {
   description = "Resource groups where a VNet Container Apps environment, a Standard load balancer or a private endpoint is allowed: the throwaway network tests. The -infra group is created by Container Apps itself."
   type        = list(string)

@@ -16,7 +16,7 @@ mg-swiftjob            all policy assignments live here
   mg-sandbox           excluded from the cost guards
 ```
 
-Region is `germanywestcentral`. The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
+Data region is `germanywestcentral`; Container Apps compute runs in `westeurope` ([ADR 7](docs/adr/0007-compute-region.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
 
 ### Identities
 
@@ -35,7 +35,7 @@ All three use GitHub OIDC federation. There is no secret. Each is tied to one Gi
 
 | Policy | Effect | Reason |
 |---|---|---|
-| `allowed-locations` | Deny | Keeps resources in Germany West Central, plus `global` and the two regions Static Web Apps need |
+| `allowed-locations` | Deny | Keeps resources in Germany West Central, plus `global`, the two regions Static Web Apps need, and West Europe for Container Apps compute only ([ADR 7](docs/adr/0007-compute-region.md)) |
 | `allowed-rg-locations` | Deny | Same for resource groups |
 | `require-rg-tag-project`, `-env`, `-owner` | Deny | Every resource group says what it is for and who owns it |
 | `deny-storage-shared-key` | Deny | Storage is reached through Entra ID, never through account keys |
@@ -85,6 +85,7 @@ Workflows pin every action to a full commit SHA and use minimal permissions. Pla
 - [ADR 2: Management group hierarchy](docs/adr/0002-management-group-hierarchy.md)
 - [ADR 3: Policy rollout, evaluate first, then enforce](docs/adr/0003-policy-rollout-do-not-enforce-first.md)
 - [ADR 4: Public platform repository, private product repositories](docs/adr/0004-public-platform-private-product.md)
+- [ADR 7: Compute in West Europe, data in Germany](docs/adr/0007-compute-region.md)
 - [Verification log](docs/verification.md)
 - [Migration log](docs/migration-log.md)
 

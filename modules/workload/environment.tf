@@ -4,7 +4,7 @@
 # authentication off, so the environment logs to Azure Monitor and a diagnostic setting (Entra) forwards them.
 resource "azurerm_container_app_environment" "this" {
   name                = "cae-${local.name}"
-  location            = var.location
+  location            = var.compute_location
   resource_group_name = data.azurerm_resource_group.this.name
   logs_destination    = "azure-monitor"
   workload_profile {
