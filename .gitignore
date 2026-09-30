@@ -12,3 +12,4 @@ __pycache__/
 secrets.*
 terraform.tfvars
 *.tfvars.json
+!modules/workload/secrets.tf
