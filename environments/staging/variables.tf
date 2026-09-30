@@ -11,9 +11,9 @@ variable "environment" {
 }
 
 variable "compute_location" {
-  description = "Region of the Container Apps environment. Data stays in Germany West Central (ADR 6)."
+  description = "Region of the Container Apps environment. Data stays in Germany West Central (ADR 7)."
   type        = string
-  default     = "germanywestcentral"
+  default     = "westeurope"
 }
 
 variable "resource_group_name" {

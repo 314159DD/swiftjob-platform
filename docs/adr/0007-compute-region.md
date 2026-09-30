@@ -1,4 +1,4 @@
-# 6. Compute in West Europe, data in Germany West Central
+# 7. Compute in West Europe, data in Germany West Central
 
 - Status: accepted
 - Date: 2026-09-30
@@ -19,8 +19,12 @@ when it ends.
 - The policy `allowed-locations-v2` gets a second exception, next to the one for Static Web Apps. `westeurope` is
   allowed only for `Microsoft.App/managedEnvironments`, `Microsoft.App/containerApps` and `Microsoft.App/jobs`. Every
   other type is still limited to `germanywestcentral` and `global`.
-- A policy test template (`containerapps-env-westeurope`) proves the exception works. The tests for a storage account
-  in `eastus2` and for an unlisted region still have to be refused.
+- Staging defaults `compute_location` to `westeurope` in `environments/staging/variables.tf`, so it does not depend
+  on the private configuration. The module default stays equal to `location`.
+- The new policy parameters have defaults, so updating the definition never breaks the live assignment.
+- A policy test template (`containerapps-env-westeurope`) proves the exception works. A storage account in `westeurope` must
+  still be refused, which proves the exception is limited to the compute types. The tests for a storage account in
+  `eastus2` and for an unlisted region still have to be refused.
 
 ## Consequences
 
