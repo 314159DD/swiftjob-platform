@@ -77,7 +77,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_failed" {
     query                   = <<-KQL
       ContainerAppConsoleLogs
       | where _ResourceId contains "${local.rg_match}"
-      | where Log contains "JOB_RESULT " and Log contains "status=failed"
+      | where Log matches regex @"JOB_RESULT job=\S+ status=failed "
     KQL
     time_aggregation_method = "Count"
     threshold               = 0
@@ -107,7 +107,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_missed" {
       | where TimeGenerated > ago(${each.value.missed_alert_hours}h)
       | where _ResourceId contains "${local.rg_match}"
       | where JobName == "job-${var.environment}-${each.key}"
-      | where Log contains "JOB_RESULT job=${each.key} " and Log contains "status=ok"
+      | where Log matches regex @"JOB_RESULT job=${each.key} status=ok "
     KQL
     time_aggregation_method = "Count"
     threshold               = 1
