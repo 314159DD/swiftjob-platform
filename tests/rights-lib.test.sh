@@ -28,4 +28,15 @@ grant_self "Monitoring Reader" /subscriptions/x
 check "$(wc -l < "$CREATED_LOG" | tr -d ' ')" 2 "a direct allowed grant is recorded for cleanup"
 grant_to "11111111-1111-1111-1111-111111111111" "Monitoring Metrics Publisher" /subscriptions/x
 check "$(wc -l < "$CREATED_LOG" | tr -d " ")" 3 "a grant to another principal is recorded for cleanup"
+
+# The allowed-grant control must fail when the grant is refused (fake az refuses everything).
+unset -f az
+PIPELINE_PRINCIPAL_IDS="$SELF 22222222-2222-2222-2222-222222222222"
+STAGING_RG_ID=/subscriptions/x/resourceGroups/rg
+before=$(wc -l < "$CREATED_LOG" | tr -d ' ')
+if grant_and_remove_allowed 2> /dev/null; then check pass fail "the control fails when the grant is refused"; else check ok ok "the control fails when the grant is refused"; fi
+check "$(wc -l < "$CREATED_LOG" | tr -d ' ')" "$before" "a refused control grant records nothing"
+# It also fails when there is no other principal to grant to.
+PIPELINE_PRINCIPAL_IDS="$SELF"
+if grant_and_remove_allowed 2> /dev/null; then check pass fail "the control fails without another principal"; else check ok ok "the control fails without another principal"; fi
 exit $fail
