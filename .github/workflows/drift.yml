@@ -1,11 +1,9 @@
-# Applies the platform layer after a merge to main, with the tf-platform identity and a required reviewer
-# on the platform environment. The plan output stays out of the public log.
-name: Apply
+# Nightly: does Azure still match the code? Uses the read-only tf-plan identity. A red run e-mails the owner.
+name: Drift
 
 on:
-  push:
-    branches: [main]
-    paths: ["platform/**"]
+  schedule:
+    - cron: "37 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -20,10 +18,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  apply:
-    name: Apply platform
+  drift:
+    name: Drift platform
     runs-on: ubuntu-24.04
-    environment: platform
+    environment: plan
     permissions:
       contents: read
       id-token: write
@@ -47,16 +45,9 @@ jobs:
           -backend-config="storage_account_name=${{ vars.TF_STATE_SA }}"
       - name: Plan
         run: |
-          terraform -chdir=platform plan -input=false -lock-timeout=5m -out=tfplan > /dev/null
-          terraform -chdir=platform show -json tfplan | python3 scripts/plan_summary.py >> "$GITHUB_STEP_SUMMARY"
-      - name: Apply
-        run: terraform -chdir=platform apply -input=false -lock-timeout=5m tfplan > /dev/null
-      - name: Verify idempotency
-        run: |
           rc=0
-          terraform -chdir=platform plan -input=false -lock-timeout=5m -detailed-exitcode > /dev/null || rc=$?
-          case "$rc" in
-            0) echo "Second plan: no changes" | tee -a "$GITHUB_STEP_SUMMARY" ;;
-            2) echo "::error::second plan still has changes"; exit 1 ;;
-            *) echo "::error::second plan failed"; exit 1 ;;
-          esac
+          terraform -chdir=platform plan -input=false -lock-timeout=5m -detailed-exitcode -out=tfplan > /dev/null || rc=$?
+          if [[ -f platform/tfplan ]]; then
+            terraform -chdir=platform show -json tfplan | python3 scripts/plan_summary.py >> "$GITHUB_STEP_SUMMARY"
+          fi
+          bash scripts/drift-exit.sh "$rc" | tee -a "$GITHUB_STEP_SUMMARY"

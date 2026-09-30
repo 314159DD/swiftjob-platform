@@ -7,4 +7,4 @@ export MSYS_NO_PATHCONV=1
 SUB=${1:?subscription id}
 MG=${2:?management group name}
 az account management-group subscription add --name "$MG" --subscription "$SUB"
-az account management-group subscription show --name "$MG" --subscription "$SUB" --query "{sub:displayName,parent:parent.name}" -o json
+az account management-group subscription show --name "$MG" --subscription "$SUB" --query "{sub:displayName,parent:parent.id}" -o json
