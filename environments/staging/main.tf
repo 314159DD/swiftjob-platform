@@ -22,4 +22,5 @@ module "workload" {
   apps                       = var.apps
   jobs                       = var.jobs
   alerts                     = var.alerts
+  postgres                   = var.postgres
 }

@@ -172,3 +172,36 @@ variable "alerts" {
     error_message = "alerts.api_app must name one of the apps"
   }
 }
+
+variable "postgres" {
+  description = "PostgreSQL flexible server with Entra ID sign-in only (ADR 9). null: no database in this environment."
+  type = object({
+    location       = string
+    version        = optional(string, "17")
+    sku_name       = optional(string, "B_Standard_B1ms")
+    storage_mb     = optional(number, 32768)
+    database       = string
+    admin_identity = string
+    owner_admin    = optional(object({ object_id = string, principal_name = string, principal_type = optional(string, "User") }))
+    users          = list(string)
+    # 80 % of the 35 user connections of B1ms (50 in total, 15 reserved by Azure)
+    alert_connections = optional(number, 28)
+  })
+  default = null
+  validation {
+    condition     = var.postgres == null || contains(["B_Standard_B1ms", "B_Standard_B2s", "B_Standard_B2ms"], try(var.postgres.sku_name, ""))
+    error_message = "postgres.sku_name must be a burstable SKU up to B2ms (cost policy)"
+  }
+  validation {
+    condition     = var.postgres == null || try(var.postgres.storage_mb, 0) == 32768
+    error_message = "postgres.storage_mb is 32768 (free-account grant)"
+  }
+  validation {
+    condition     = var.postgres == null || (contains(var.identities, try(var.postgres.admin_identity, "")) && alltrue([for u in try(var.postgres.users, []) : contains(var.identities, u)]))
+    error_message = "postgres.admin_identity and postgres.users must be listed identities"
+  }
+  validation {
+    condition     = var.postgres == null || can(regex("^[a-z][a-z0-9_]{1,30}$", try(var.postgres.database, "")))
+    error_message = "postgres.database is 2 to 31 lowercase letters, digits or underscores"
+  }
+}
