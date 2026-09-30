@@ -11,6 +11,9 @@ on:
       - "environments/staging/**"
       - "scripts/tf-*.sh"
       - "scripts/state-check.sh"
+      - "scripts/state-secret-check.sh"
+      - "scripts/smoke-test.sh"
+      - "scripts/smoke-staging.sh"
       - "scripts/plan_summary.py"
       - ".github/workflows/apply-staging.yml"
   workflow_dispatch:
@@ -111,15 +114,4 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Smoke test
-        run: |
-          az config set extension.use_dynamic_install=yes_without_prompt > /dev/null 2>&1 || true
-          app() { az containerapp show -g rg-swiftjob-staging -n "ca-swiftjob-staging-$1" --query "$2" -o tsv 2> /dev/null | tr -d '\r' || true; }
-          web=$(app web properties.configuration.ingress.fqdn); api=$(app api properties.configuration.ingress.fqdn)
-          web_image=$(app web "properties.template.containers[0].image"); api_image=$(app api "properties.template.containers[0].image")
-          if [[ -z "$web" || -z "$api" ]]; then
-            echo "No apps deployed yet, smoke test skipped" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
-          fi
-          if [[ "$web_image" != ghcr.io/* || "$api_image" != ghcr.io/* ]]; then
-            echo "Apps do not run product images yet, smoke test skipped" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
-          fi
-          bash scripts/smoke-test.sh "https://${web}" "https://${api}" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: bash scripts/smoke-staging.sh | tee -a "$GITHUB_STEP_SUMMARY"
