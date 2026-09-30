@@ -16,7 +16,7 @@ mg-swiftjob            all policy assignments live here
   mg-sandbox           excluded from the cost guards
 ```
 
-Data region is `germanywestcentral`; Container Apps compute runs in `westeurope` ([ADR 7](docs/adr/0007-compute-region.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
+Data region is `germanywestcentral`; Container Apps compute runs in `swedencentral` ([ADR 8](docs/adr/0008-compute-region-sweden-central.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
 
 ### Identities
 

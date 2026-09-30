@@ -1,6 +1,6 @@
 # 7. Compute in West Europe, data in Germany West Central
 
-- Status: accepted
+- Status: superseded by [ADR 8](0008-compute-region-sweden-central.md)
 - Date: 2026-09-30
 
 ## Context

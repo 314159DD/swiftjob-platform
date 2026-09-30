@@ -73,10 +73,10 @@ run "compute_region_differs_from_data_region" {
   command = apply
   variables {
     location         = "germanywestcentral"
-    compute_location = "westeurope"
+    compute_location = "swedencentral"
   }
   assert {
-    condition     = azurerm_container_app_environment.this.location == "westeurope"
+    condition     = azurerm_container_app_environment.this.location == "swedencentral"
     error_message = "the Container Apps environment must use compute_location"
   }
   assert {
