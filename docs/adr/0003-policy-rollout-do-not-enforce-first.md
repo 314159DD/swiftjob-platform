@@ -68,3 +68,34 @@ almost nothing until there is revenue.
   month per environment.
 - A legitimate need for a denied resource type means changing the policy in a pull request. The price table is
   the first thing to check when that comes up.
+
+## Phase 2
+
+Phase 2 (workload infrastructure, ADR 5) added policies for the new resource types. They went through the same
+rollout: assigned with `enforce_phase2_policies = false`, reviewed against the compliance report, then enforced.
+
+| Assignment | Effect | Scope |
+|---|---|---|
+| `allowed-locations-v2` | Deny | `mg-swiftjob`. Germany West Central and `global` for every type, the Static Web Apps regions for that type only, the compute regions (`swedencentral`, `northeurope`) for the three Container Apps types only ([ADR 8](0008-compute-region-sweden-central.md)) |
+| `deny-pg-password-auth` | Deny | `mg-swiftjob`. PostgreSQL flexible servers must use Entra ID only |
+| `deny-network-cost` | Deny | `mg-workloads`, without the network test groups. No VNet Container Apps environment, no workload profile other than Consumption, no Standard load balancer, no private endpoint ([ADR 6](0006-no-virtual-network-before-revenue.md)) |
+| `audit-pna-keyvault`, `-storage`, `-postgres` | Audit | `mg-prod` and the production resource group. Public network access stays visible until the VNet switch |
+| `audit-aca-identity`, `-https` | Audit | `mg-workloads`. Container Apps without a managed identity or without HTTPS only |
+
+- Compliance before enforcement (2026-09-30): every evaluated assignment showed 0 non-compliant resources. The
+  A1 project (Static Web App in `eastus2`, network test with a private endpoint in `rg-cloudresume-nettest`) is not
+  affected: the Static Web Apps exception covers the first and the network test group is exempt from
+  `deny-network-cost`.
+- The policy test gained templates for the new policies. Before enforcement, run
+  [36668175381](https://github.com/314159DD/swiftjob-platform/actions/runs/36668175381) was red as intended: the 3
+  old templates passed, the 6 new forbidden templates validated and were reported "not refused", and the 2 controls
+  passed. After enforcement the test is green, run `RUN_ID_POLICY_GREEN`.
+- The A1 project deployed and ran its private network test under the enforced policies: run `RUN_ID_A1_VERIFY`.
+- `allowed-locations` (phase 1) is replaced by `allowed-locations-v2`. The old assignment allowed the compute and
+  Static Web Apps regions for every type. The v2 assignment allows them only for the types that need them. It was
+  removed in PR #21, platform apply
+  [36689799328](https://github.com/314159DD/swiftjob-platform/actions/runs/36689799328).
+- Resource group regions: `allowed-rg-locations` was left unchanged. The resource groups of the A1 project live in
+  `westeurope`, and a Deny on resource group locations would break its deployments. Resources are limited by
+  `allowed-locations-v2`, so a resource group in `westeurope` can hold nothing but the types that region is allowed
+  for.

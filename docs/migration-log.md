@@ -31,3 +31,27 @@ Decisions taken in this phase: Terraform (ADR 1), the hierarchy (ADR 2), evaluat
 custom VNet before revenue (ADR 3), public platform with private product (ADR 4).
 
 Results and run IDs are in [verification.md](verification.md).
+
+## Phase 2a (2026-09-30): hardened pipeline, phase 2 policies enforced, staging infrastructure without apps
+
+What exists now:
+
+- Plan output rules: every Terraform command runs through `scripts/tf-layer.sh`. Layers with private inputs never
+  print Terraform errors in a public log (ADR 5).
+- `tf-plan` only reads: Reader plus Storage Blob Data Reader on the state containers, and the custom role
+  `swiftjob-plan-reader` for the workload layers. A weekly rights test proves it.
+- A fourth pipeline identity, `swiftjob-tf-staging`, with Contributor on the staging and network test resource
+  groups and role assignments limited by an ABAC condition (ADR 5).
+- A private configuration repository, `314159DD/swiftjob-platform-config`, read by the public workflows through a
+  read-only deploy key. Only commits on its main branch can be deployed.
+- Phase 2 policies enforced: `allowed-locations-v2` (replacing `allowed-locations`), `deny-pg-password-auth`,
+  `deny-network-cost`, plus audits for public network access and Container Apps (ADR 3, ADR 6).
+- The staging environment `rg-swiftjob-staging` without any app: Container Apps environment `cae-swiftjob-staging`
+  in `swedencentral`, Key Vault, storage, monitoring and a kill switch, all in Germany West Central except the
+  compute. Nothing has an hourly price.
+- Staging plan on pull requests, apply on merge or dispatch, nightly drift for both layers.
+
+Decisions taken in this phase: workload layer and private configuration (ADR 5), no custom VNet before revenue
+(ADR 6), compute region (ADR 7, superseded by ADR 8: compute in `swedencentral`, `northeurope` as fallback).
+
+Results and run IDs are in [verification.md](verification.md).

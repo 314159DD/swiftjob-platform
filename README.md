@@ -16,27 +16,28 @@ mg-swiftjob            all policy assignments live here
   mg-sandbox           excluded from the cost guards
 ```
 
-Data region is `germanywestcentral`; Container Apps compute runs in `swedencentral` ([ADR 8](docs/adr/0008-compute-region-sweden-central.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
+Data region is `germanywestcentral`; Container Apps compute runs in `swedencentral`, with `northeurope` as fallback ([ADR 8](docs/adr/0008-compute-region-sweden-central.md), which supersedes [ADR 7](docs/adr/0007-compute-region.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
 
 ### Identities
 
-All three use GitHub OIDC federation. There is no secret. Each is tied to one GitHub environment
+All four use GitHub OIDC federation. There is no secret. Each is tied to one GitHub environment
 ([ADR 1](docs/adr/0001-terraform-layered-state-and-identities.md)).
 
 | Identity | Environment | What it can do |
 |---|---|---|
-| `swiftjob-tf-plan` | `plan` | Read on `mg-swiftjob` and the subscription, read on the three state containers. Plans are lock-free. Runs `terraform plan` on pull requests and for the drift check |
+| `swiftjob-tf-plan` | `plan` | Read on `mg-swiftjob` and the subscription, read on the three state containers (no write) and the custom `swiftjob-plan-reader` role on the workload resource groups. Plans are lock-free. Runs `terraform plan` on pull requests and for the drift check |
 | `swiftjob-tf-platform` | `platform`, required reviewer, `main` only | Applies the platform layer: management groups, policy, the platform resource group, the budget, and role assignments limited by an ABAC condition to two logging roles |
 | `swiftjob-policy-test` | `policy-test`, `main` only | Validates test templates in the platform resource group, with write on exactly the tested resource types |
+| `swiftjob-tf-staging` | `staging`, `nettest`, `main` only | Applies the staging workload layer: Contributor on the staging and network test resource groups, write on its own state container only, and role assignments limited by an ABAC condition to a short list of data roles for service principals ([ADR 5](docs/adr/0005-staging-workload-identity.md)) |
 
 ### Policies
 
-12 assignments at `mg-swiftjob`, enforced ([ADR 3](docs/adr/0003-policy-rollout-do-not-enforce-first.md)).
+22 assignments in total, all enforced or audit-only by design ([ADR 3](docs/adr/0003-policy-rollout-do-not-enforce-first.md)).
 
 | Policy | Effect | Reason |
 |---|---|---|
-| `allowed-locations` | Deny | Keeps resources in Germany West Central, plus `global`, the two regions Static Web Apps need, and West Europe for Container Apps compute only ([ADR 7](docs/adr/0007-compute-region.md)) |
-| `allowed-rg-locations` | Deny | Same for resource groups |
+| `allowed-locations-v2` | Deny | Keeps resources in Germany West Central and `global`. The two regions Static Web Apps need are allowed for that type only, `swedencentral` and `northeurope` for the Container Apps types only ([ADR 8](docs/adr/0008-compute-region-sweden-central.md)). Replaces `allowed-locations` |
+| `allowed-rg-locations` | Deny | Resource group regions. Unchanged in phase 2 because the resource groups of the other project live in West Europe |
 | `require-rg-tag-project`, `-env`, `-owner` | Deny | Every resource group says what it is for and who owns it |
 | `deny-storage-shared-key` | Deny | Storage is reached through Entra ID, never through account keys |
 | `deny-kv-access-policies` | Deny | Key vaults use the RBAC permission model |
@@ -44,6 +45,10 @@ All three use GitHub OIDC federation. There is no secret. Each is tied to one Gi
 | `allowed-vm-sizes` | Deny | Small burstable VM sizes only |
 | `deny-costly-skus` (custom) | Deny | No Front Door Premium, no API Management above Consumption and Developer, PostgreSQL limited to burstable SKUs |
 | `diag-keyvault`, `diag-postgres` | DeployIfNotExists | Audit logs go to the central Log Analytics workspace without per-resource setup |
+| `deny-pg-password-auth` (custom) | Deny | PostgreSQL flexible servers use Entra ID sign-in only |
+| `deny-network-cost` (custom, at `mg-workloads`) | Deny | No VNet Container Apps environment, no dedicated workload profile, no Standard load balancer, no private endpoint. The throwaway network test groups are exempt ([ADR 6](docs/adr/0006-no-virtual-network-before-revenue.md)) |
+| `audit-pna-keyvault`, `-storage`, `-postgres` | Audit | Public network access is visible in production until the VNet switch |
+| `audit-aca-identity`, `-https` | Audit | Container Apps without a managed identity or without HTTPS only |
 
 The three cost guards skip `mg-sandbox`.
 
@@ -55,6 +60,18 @@ The three cost guards skip `mg-sandbox`.
    applies and then plans again. The second plan must report no changes.
 3. A nightly `Drift` workflow runs a plan and goes red when Azure differs from the code.
 4. A weekly `Policy test` workflow validates templates that must be refused and one that must pass.
+
+The staging workload layer (`environments/staging`, built from `modules/workload`) follows the same path:
+
+5. The pull request plans both layers, `Plan (platform)` and `Plan (staging)`.
+6. A merge that changes the module or the staging root applies staging. So does a configuration dispatch from the
+   private configuration repository after a merge there. Apply runs a second plan that must be empty.
+7. The nightly `Drift` workflow checks both layers.
+8. A weekly `Rights test` proves that `tf-plan` cannot write state and that `tf-staging` cannot touch production or
+   grant itself more.
+
+Product configuration (names, settings, schedules, image digests) lives in a private repository. This repository
+holds only the code that consumes it ([ADR 5](docs/adr/0005-staging-workload-identity.md)).
 
 Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Terraform errors are redacted for the platform layer and withheld for layers with private inputs; the full text is only available in a private workflow.
 
@@ -71,7 +88,7 @@ Workflows pin every action to a full commit SHA and use minimal permissions. Pla
 
 - No custom virtual network before revenue. For Container Apps a custom VNet adds a load balancer and two public
   IPs, about 22 EUR per month per environment. Identity is the boundary for now: Entra ID, role assignments and
-  policy. The reasoning and the numbers are in ADR 3.
+  policy. The reasoning and the numbers are in [ADR 6](docs/adr/0006-no-virtual-network-before-revenue.md).
 - Only three things run by hand from the owner's machine, because Terraform needs them to exist first or
   because they are rare privileged acts: `scripts/bootstrap.sh` (state, root management group, identities,
   provider registration), `scripts/configure-github.sh` (environments, branch protection) and
@@ -85,13 +102,17 @@ Workflows pin every action to a full commit SHA and use minimal permissions. Pla
 - [ADR 2: Management group hierarchy](docs/adr/0002-management-group-hierarchy.md)
 - [ADR 3: Policy rollout, evaluate first, then enforce](docs/adr/0003-policy-rollout-do-not-enforce-first.md)
 - [ADR 4: Public platform repository, private product repositories](docs/adr/0004-public-platform-private-product.md)
-- [ADR 7: Compute in West Europe, data in Germany](docs/adr/0007-compute-region.md)
+- [ADR 5: The workload layer, private configuration and the staging pipeline identity](docs/adr/0005-staging-workload-identity.md)
+- [ADR 6: No custom virtual network before revenue](docs/adr/0006-no-virtual-network-before-revenue.md)
+- [ADR 7: Compute in West Europe, data in Germany](docs/adr/0007-compute-region.md) (superseded)
+- [ADR 8: Compute in Sweden Central, data in Germany West Central](docs/adr/0008-compute-region-sweden-central.md)
 - [Verification log](docs/verification.md)
 - [Migration log](docs/migration-log.md)
 
 ## Roadmap
 
-Phases 0 and 1 (this repository) are done. What follows:
+Phases 0 and 1 are done. Phase 2a (hardened pipeline, phase 2 policies enforced, staging infrastructure without
+apps) is done. What follows:
 
 - Phase 2: run the web app, the API and the scheduled jobs on Azure Container Apps.
 - Phase 3: move the database to Azure Database for PostgreSQL.
