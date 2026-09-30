@@ -102,6 +102,10 @@ variable "registry" {
   description = "Private registry and the Key Vault secret that holds its pull token. null for public images only."
   type        = object({ server = string, username = string, password_secret = string })
   default     = null
+  validation {
+    condition     = var.registry == null || contains(keys(var.secrets), var.registry.password_secret)
+    error_message = "registry.password_secret must be one of the secrets"
+  }
 }
 
 variable "secrets" {
@@ -150,8 +154,8 @@ variable "jobs" {
   }))
   default = {}
   validation {
-    condition     = alltrue([for j in values(var.jobs) : j.missed_alert_hours == null || (j.missed_alert_hours >= 1 && j.missed_alert_hours <= 48)])
-    error_message = "missed_alert_hours must be between 1 and 48 (the alert window is rounded up to an allowed size and the query filters the exact hours)"
+    condition     = alltrue([for j in values(var.jobs) : j.missed_alert_hours == null || (j.missed_alert_hours >= 1 && j.missed_alert_hours <= 48 && floor(j.missed_alert_hours) == j.missed_alert_hours)])
+    error_message = "missed_alert_hours must be a whole number between 1 and 48 (the alert window is rounded up to an allowed size and the query filters the exact hours)"
   }
 }
 
@@ -163,4 +167,8 @@ variable "alerts" {
     api_p95_ms        = optional(number, 3000)
   })
   default = {}
+  validation {
+    condition     = var.alerts.api_app == null || contains(keys(var.apps), var.alerts.api_app)
+    error_message = "alerts.api_app must name one of the apps"
+  }
 }
