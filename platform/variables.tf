@@ -64,7 +64,7 @@ variable "static_site_locations" {
 }
 
 variable "compute_locations" {
-  description = "Regions where the Container Apps compute types may run (ADR 6). Data stays in Germany West Central."
+  description = "Regions where the Container Apps compute types may run (ADR 7). Data stays in Germany West Central."
   type        = list(string)
   default     = ["westeurope"]
 }

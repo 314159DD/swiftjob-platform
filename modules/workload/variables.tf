@@ -14,7 +14,7 @@ variable "location" {
 }
 
 variable "compute_location" {
-  description = "Region of the Container Apps environment and everything that runs in it. Data resources (Key Vault, storage, identities, monitoring, kill switch) stay in location. See ADR 6."
+  description = "Region of the Container Apps environment and everything that runs in it. Data resources (Key Vault, storage, identities, monitoring, kill switch) stay in location. See ADR 7."
   type        = string
   default     = "germanywestcentral"
 }
