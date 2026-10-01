@@ -237,7 +237,7 @@ run "connection_settings_win_over_configured_env" {
     error_message = "configured PGUSER and PGSSLMODE must not override the fixed values"
   }
   assert {
-    condition     = one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGHOST"]) == "psql-mock.postgres.database.azure.com" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGDATABASE"]) == "appdb" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGSSLROOTCERT"]) == "system"
+    condition     = one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGHOST"]) == "psql-mock.postgres.database.azure.com" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGDATABASE"]) == "appdb" && one([for e in azurerm_container_app.this["api"].template[0].container[0].env : e.value if e.name == "PGSSLROOTCERT"]) == "/etc/ssl/certs/ca-certificates.crt"
     error_message = "PGHOST, PGDATABASE and PGSSLROOTCERT come from the module"
   }
 }
