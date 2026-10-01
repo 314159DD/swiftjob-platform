@@ -89,14 +89,33 @@ pg_signin() { # sslmode password user
   PGPASSWORD="$2" PGCONNECT_TIMEOUT=15 psql "host=${PG_HOST} port=5432 dbname=postgres user=$(conninfo_quote "$3") sslmode=$1" -w -At -c 'select 1' < /dev/null
 }
 pg_password() { pg_signin require wrong-password-probe access-probe; }
-# Azure matches an Entra sign-in on the principal's display name (for a service principal not the client id that
-# `az account show` returns), so the name comes from PG_PROBE_USER. The token is the runner's own valid one, so the
-# only reason left for a refusal is that no role exists for that identity.
-pg_foreign() {
+# The token of the runner's own identity, for the PostgreSQL scope; fails when none is available.
+pg_token() {
   local t
   t=$(az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv 2> /dev/null) || return 2
   t=$(tr -d '\r' <<< "$t")
   [[ -n "$t" ]] || return 2
+  printf '%s' "$t"
+}
+# Positive control for the foreign-identity check. The runner's identity is deliberately not mapped to a role, and
+# no mapped identity can sign in from the runner, so the control cannot be a successful sign-in. It proves instead
+# that the token is a real one for this service: it is a JWT for the PostgreSQL audience and has not expired.
+# Azure answers "password authentication failed" for such a token of an unmapped identity (the same text as for
+# a wrong password), so the refusal only counts as the foreign-identity refusal when this control passed.
+pg_token_valid() {
+  local t p
+  t=$(pg_token) || return 2
+  p=$(cut -d. -f2 <<< "$t" | tr '_-' '/+')
+  while (( ${#p} % 4 != 0 )); do p+="="; done
+  p=$(base64 -d <<< "$p" 2> /dev/null) || return 2
+  jq -e --argjson now "$(date +%s)" \
+    '(.aud | tostring | test("ossrdbms-aad[.]database[.]windows[.]net")) and (.exp > $now)' <<< "$p" > /dev/null 2>&1
+}
+# Azure matches an Entra sign-in on the principal's display name (for a service principal not the client id that
+# `az account show` returns), so the name comes from PG_PROBE_USER.
+pg_foreign() {
+  local t
+  t=$(pg_token) || return 2
   pg_signin require "$t" "$PG_PROBE_USER"
 }
 pg_plain() { pg_signin disable wrong-password-probe access-probe; }
@@ -140,9 +159,14 @@ pg_run_sign_in_checks() {
   else
     # Password sign-in is proven off by the property check above; this only shows that a wrong password is refused.
     EXPECT_LABEL="wrong-password sign-in" expect_refused "sign-in with a password" "password authentication failed" pg_password || true
-    # The exact refusal Azure returns for "valid token, no role" is not pinned by its documentation; only the
-    # PostgreSQL text for a missing role is accepted, so a generic authentication failure is reported as a FAIL.
-    EXPECT_LABEL="no role for the identity" expect_refused "sign-in with a foreign Entra identity" "FATAL: +role \"[^\"]+\" does not exist" pg_foreign || true
+    # Azure refuses a valid token of an unmapped identity with "password authentication failed", the text of a wrong
+    # password, or with a missing-role text. Either counts only after the token control passed in this run; if the
+    # control fails the refusal proves nothing about the identity, so the check reports that it could not run.
+    if expect_ok "control: the Entra token for the PostgreSQL scope is valid" pg_token_valid; then
+      EXPECT_LABEL="identity not mapped to a role, token control passed" expect_refused "sign-in with a foreign Entra identity" "FATAL: +(password authentication failed|role \"[^\"]+\" does not exist)" pg_foreign || true
+    else
+      fail_check "sign-in with a foreign Entra identity could not run, token control failed"
+    fi
     EXPECT_LABEL="TLS required" expect_refused "sign-in without TLS" "no pg_hba\.conf entry.*no encryption|SSL connection is required" pg_plain || true
   fi
   pg_close_rule || true

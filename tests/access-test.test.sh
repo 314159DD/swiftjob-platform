@@ -41,21 +41,24 @@ case "$*" in
     elif [[ "$*" == *"name=="* ]]; then [[ "${FW_STUCK:-0}" == 1 ]] && printf 'probe\r\n'   # the test's own rule after its delete
     else printf '%s\r\n' ${FW_EXTRA:-}; fi   # every rule but the Azure-services one
     exit 0 ;;
-  "account get-access-token"*) printf 'eyJ-probe-token\r\n' ;;
+  "account get-access-token"*) [[ "${TOKEN_FAIL:-0}" == 1 ]] && exit 1
+    # A JWT-shaped token: TOKEN_AUD and TOKEN_EXP shape the claims the control reads.
+    printf 'eyJ-probe.%s.sig\r\n' "$(printf '{"aud":"%s","exp":%s}' "${TOKEN_AUD:-https://ossrdbms-aad.database.windows.net}" "${TOKEN_EXP:-4102444800}" | base64 | tr -d '\n=' | tr '+/' '-_')" ;;
   "account show"*) printf '0d0d0d0d-1111-2222-3333-444444444444\r\n' ;;
 esac
 STUB
 cat > "$tmp/bin/psql" <<'STUB'
 #!/usr/bin/env bash
-# PG_LEAK=password|token|plain (that sign-in succeeds) ; PG_NET=1 (network failure) ; PG_GENERIC=1 (the token refusal is a generic auth failure)
+# PG_LEAK=password|token|plain (that sign-in succeeds) ; PG_NET=1 (network failure) ; PG_ROLE=1 (the token refusal names a missing role) ; PG_OTHER=1 (the token refusal is an unrelated error)
 echo "PsqlCall $*" >> "$ARGLOG"
 [[ "${PG_NET:-0}" == 1 ]] && { echo 'psql: error: connection to server at "psql-x" failed: timeout expired' >&2; exit 2; }
 kind=token; [[ "${PGPASSWORD:-}" == wrong-password-probe ]] && kind=password; [[ "$*" == *sslmode=disable* ]] && kind=plain
 [[ "${PG_LEAK:-}" == "$kind" ]] && { echo 1; exit 0; }
 case "$kind" in
   plain) echo 'psql: error: connection to server failed: FATAL:  no pg_hba.conf entry for host "1.2.3.4", user "access-probe", database "postgres", no encryption SECRET-DETAIL' >&2 ;;
-  token) if [[ "${PG_GENERIC:-0}" == 1 ]]; then echo 'psql: error: connection to server failed: FATAL:  password authentication failed for user "swiftjob test" SECRET-DETAIL' >&2
-         else echo 'psql: error: connection to server at "psql-x" (1.2.3.4), port 5432 failed: FATAL:  role "swiftjob test" does not exist SECRET-DETAIL' >&2; fi ;;
+  token) if [[ "${PG_OTHER:-0}" == 1 ]]; then echo 'psql: error: connection to server failed: FATAL:  too many connections for role "swiftjob test" SECRET-DETAIL' >&2
+         elif [[ "${PG_ROLE:-0}" == 1 ]]; then echo 'psql: error: connection to server at "psql-x" (1.2.3.4), port 5432 failed: FATAL:  role "swiftjob test" does not exist SECRET-DETAIL' >&2
+         else echo 'psql: error: connection to server at "psql-x" (1.2.3.4), port 5432 failed: FATAL:  password authentication failed for user "swiftjob test" SECRET-DETAIL' >&2; fi ;;
   *) echo 'psql: error: connection to server failed: FATAL:  password authentication failed for user "access-probe" SECRET-DETAIL' >&2 ;;
 esac
 exit 2
@@ -116,7 +119,7 @@ run PG_LIST_FAIL=1
 check "$rc" 1 "a discovery error fails closed"; check "$(count 'FAIL: PostgreSQL server discovery failed')" 1 "and says so"
 check "$(count SECRET-DETAIL)" 0 "the discovery error text is not printed"; check "$(count '00000000-1111')" 0 "no tenant id either"
 run PG=1
-check "$rc" 0 "database refusals pass"; check "$(count '^PASS')" 13 "thirteen checks pass"
+check "$rc" 0 "database refusals pass"; check "$(count '^PASS')" 14 "fourteen checks pass (the token control included)"
 check "$(count SECRET-DETAIL)" 0 "raw psql text is not printed"; check "$(count eyJ-probe)" 0 "the token is not printed"
 check "$(grep -c FwCreate "$ARGLOG")" 1 "a probe rule is opened"; check "$(grep -c FwDelete "$ARGLOG")" 1 "and removed again"
 run PG=1 PG_LEAK=password
@@ -156,9 +159,26 @@ check "$(grep -c -- "--name access-test-[A-Za-z0-9]*-[0-9]" "$ARGLOG")" 2 "M1: t
 run PG=1 PG_PROBE_USER=
 check "$rc" 1 "C1: no display name fails closed"; check "$(count 'FAIL: PG_PROBE_USER')" 1 "and says so"
 check "$(grep -c FwCreate "$ARGLOG")" 0 "no rule is opened without it"
-run PG=1 PG_GENERIC=1
-check "$rc" 1 "C1: a generic authentication failure is not the missing-role refusal"
+run PG=1 PG_OTHER=1
+check "$rc" 1 "C1: an unrelated error is not a refusal of the foreign identity"
 check "$(count 'FAIL: sign-in with a foreign Entra identity failed for another reason')" 1 "named"
+run PG=1 PG_ROLE=1
+check "$rc" 0 "a missing-role refusal still passes with the control"
+check "$(count 'PASS: sign-in with a foreign Entra identity refused')" 1 "named"
+
+# Token control for the foreign-identity refusal
+run PG=1
+check "$(count 'PASS: control: the Entra token for the PostgreSQL scope is valid works')" 1 "control ok and foreign refused: both pass"
+check "$(count 'PASS: sign-in with a foreign Entra identity refused (identity not mapped to a role, token control passed)')" 1 "and the label says the control passed"
+run PG=1 TOKEN_FAIL=1
+check "$rc" 1 "no token: the run fails"; check "$(count 'FAIL: sign-in with a foreign Entra identity could not run, token control failed')" 1 "the foreign check reports could not run"
+check "$(count '^PASS: sign-in with a foreign')" 0 "and is not a PASS"; check "$(grep -c "PsqlCall.*user='swiftjob test' " "$ARGLOG")" 0 "the foreign sign-in is not attempted"
+run PG=1 TOKEN_EXP=1000
+check "$rc" 1 "an expired token fails the control"; check "$(count '^PASS: sign-in with a foreign')" 0 "and the refusal is not counted"
+run PG=1 TOKEN_AUD=https://management.azure.com
+check "$rc" 1 "a token for another service fails the control"; check "$(count 'could not run, token control failed')" 1 "named"
+run PG=1 TOKEN_FAIL=1 PG_LEAK=token
+check "$rc" 1 "a failing control and a foreign sign-in that would work still fails"
 run PG=1 FW_EXTRA=access-test-99-1
 check "$rc" 1 "I1: a leftover probe rule fails"; check "$(count 'FAIL: leftover firewall rule found')" 1 "named"
 check "$(grep -c -- "FwDelete.*--name access-test-99-1" "$ARGLOG")" 1 "and is deleted"
@@ -175,7 +195,7 @@ run PG=1 FW_STUCK=1
 check "$rc" 1 "I2: a rule still listed after the delete fails"; check "$(count 'FAIL: probe firewall rule not removed')" 1 "named"
 run PG=1
 check "$(count '1\.2\.3\.4')" 0 "I3: no address in the output"; check "$(count 'swiftjob test')" 0 "I3: no principal name in the output"
-check "$(count 'PASS: sign-in with a foreign Entra identity refused (no role for the identity)')" 1 "I3: a fixed label instead of the psql text"
+check "$(count 'PASS: sign-in with a foreign Entra identity refused (identity not mapped to a role, token control passed)')" 1 "I3: a fixed label instead of the psql text"
 run PG=1 PG_LEAK=plain
 check "$(count '1\.2\.3\.4')" 0 "I3: no address in a failure line either"
 run PG=1 ALLOW_PROBE_RULE=0
