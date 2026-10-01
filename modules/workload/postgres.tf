@@ -10,7 +10,7 @@ locals {
       PGDATABASE    = var.postgres.database
       PGUSER        = azurerm_user_assigned_identity.this[id].name
       PGSSLMODE     = "verify-full"
-      PGSSLROOTCERT = "system" # needs libpq 16 or newer (or psycopg 3 binary wheels); older clients read it as a file path
+      PGSSLROOTCERT = "/etc/ssl/certs/ca-certificates.crt" # Debian CA bundle in the images; "system" fails with the psycopg binary wheel, whose bundled OpenSSL looks elsewhere
     }
   }
   pg_refs = { for id, mi in azurerm_user_assigned_identity.this : "@principal:${id}" => "${mi.name}|${mi.principal_id}" }
