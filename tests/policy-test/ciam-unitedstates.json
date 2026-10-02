@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.AzureActiveDirectory/ciamDirectories",
+      "apiVersion": "2023-05-17-preview",
+      "name": "[concat('swiftjobptus', uniqueString(resourceGroup().id))]",
+      "location": "United States",
+      "sku": { "name": "Base", "tier": "A0" },
+      "tags": { "project": "swiftjob", "env": "platform", "owner": "steven" },
+      "properties": {
+        "createTenantProperties": { "displayName": "policy-probe", "countryCode": "DE" }
+      }
+    }
+  ]
+}
