@@ -189,6 +189,19 @@ Budgets unchanged: subscription 25 EUR and staging 5 EUR, each at 50, 80 and 100
   purge-ats-results `purged=0`, retry-auth-deletes `pending=0 cleared=0`.
 - Smoke: health check 200; the retired batch evaluation route answers 405 (no route).
 
+## 2026-10-02: phase 4, identity layer for customer login
+
+- `modules/external-identity` declares three app registrations for the customer directory (a separate external
+  tenant): `web` (confidential client, redirect URIs for the callback and the sign-out landing, no implicit grant),
+  `api` (v2 access tokens, scope `api.access`, user-assignable app role `Admin`) and `deleter` (Graph application
+  roles `User.ReadWrite.All` and `User.DeleteRestore.All` only). No client secret is created by Terraform; the
+  owner creates secrets in the portal so they never reach state.
+- `environments/identity-staging` is its own state (`identity-staging.tfstate`) and is run by `identity.yml`: a
+  plan job with the read-only identity, an apply job with the write identity, then a second plan that must show
+  no changes. Both sign in to the external tenant by OIDC federation.
+- Module test: `terraform -chdir=modules/external-identity test` (4 runs, mock provider).
+- Admin consent for the delegated and application permissions is a separate owner step after the apply.
+
 ## Findings during the build
 
 - ARM `az deployment group validate` needs write permission for every resource type in the template, like

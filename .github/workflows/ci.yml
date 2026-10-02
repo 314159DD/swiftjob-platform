@@ -31,18 +31,20 @@ jobs:
       - run: terraform fmt -check -recursive
       - name: Validate every root and test the module
         run: |
-          for d in platform environments/staging; do
+          for d in platform environments/staging environments/identity-staging; do
             terraform -chdir="$d" init -backend=false -input=false > /dev/null
             terraform -chdir="$d" validate
           done
           terraform -chdir=modules/workload init -backend=false -input=false > /dev/null
           terraform -chdir=modules/workload test
+          terraform -chdir=modules/external-identity init -backend=false -input=false > /dev/null
+          terraform -chdir=modules/external-identity test
       - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
       - env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
-          for d in platform environments/staging modules/workload; do
+          for d in platform environments/staging environments/identity-staging modules/workload modules/external-identity; do
             tflint --chdir="$d" --config="$GITHUB_WORKSPACE/.tflint.hcl" --format compact
           done
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
