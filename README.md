@@ -16,7 +16,7 @@ mg-swiftjob            all policy assignments live here
   mg-sandbox           excluded from the cost guards
 ```
 
-Data region is `germanywestcentral`; Container Apps compute runs in `swedencentral`, with `northeurope` as fallback ([ADR 8](docs/adr/0008-compute-region-sweden-central.md), which supersedes [ADR 7](docs/adr/0007-compute-region.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
+Data region is `germanywestcentral`; Container Apps compute and the PostgreSQL server run in `swedencentral` ([ADR 9](docs/adr/0009-postgresql-region-and-sign-in.md)), with `northeurope` as fallback ([ADR 8](docs/adr/0008-compute-region-sweden-central.md), which supersedes [ADR 7](docs/adr/0007-compute-region.md)). The tree is defined in `platform/management-groups.tf` ([ADR 2](docs/adr/0002-management-group-hierarchy.md)).
 
 ### Identities
 
@@ -116,7 +116,8 @@ Known behaviour: an apply can fail part way, for example on a transient Azure er
 ## Roadmap
 
 Phases 0 and 1 are done. Phase 2a (hardened pipeline, phase 2 policies enforced, staging infrastructure without
-apps) is done. What follows:
+apps) is done. Phase 3 (database on Azure, migration job, staging proven) is done except the owner-gated production
+export and import. What follows:
 
 - Phase 2: run the web app, the API and the scheduled jobs on Azure Container Apps.
 - Phase 3: move the database to Azure Database for PostgreSQL.
