@@ -112,5 +112,5 @@ resource "azurerm_container_app" "this" {
     }
   }
 
-  depends_on = [azurerm_role_assignment.secret_reader]
+  depends_on = [time_sleep.role_propagation]
 }

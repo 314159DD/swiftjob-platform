@@ -88,6 +88,16 @@ variable "apps_enabled" {
   default     = false
 }
 
+variable "role_propagation_wait" {
+  description = "How long apps and jobs wait after new secret reader role assignments (Azure role assignments are not effective at once)."
+  type        = string
+  default     = "90s"
+  validation {
+    condition     = can(regex("^[0-9]+[sm]$", var.role_propagation_wait))
+    error_message = "use a duration such as 90s or 2m"
+  }
+}
+
 variable "images" {
   description = "Image references by key, digests only."
   type        = map(string)
