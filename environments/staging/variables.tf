@@ -144,3 +144,9 @@ variable "postgres" {
   })
   default = null
 }
+
+variable "github_federations" {
+  description = "GitHub Actions OIDC subjects by identity (Key Vault reader identities for workflows, e.g. the synthetic login test)."
+  type        = map(list(string))
+  default     = {}
+}

@@ -159,3 +159,11 @@ run "only_data_roles_for_blobs" {
   }
   expect_failures = [var.blob_containers]
 }
+
+run "identity_with_a_data_role_cannot_be_federated" {
+  command = plan
+  variables {
+    github_federations = { job-b = ["repo:owner/repo:ref:refs/heads/main"] }
+  }
+  expect_failures = [var.github_federations]
+}
