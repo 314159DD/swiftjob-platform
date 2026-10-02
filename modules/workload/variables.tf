@@ -128,6 +128,28 @@ variable "secrets" {
   }
 }
 
+variable "github_federations" {
+  description = "GitHub Actions OIDC subjects that may sign in as an identity, by identity. Only for identities that run no app or job and hold no data role; they get Key Vault secrets through secrets.readers and nothing else."
+  type        = map(list(string))
+  default     = {}
+  validation {
+    condition = alltrue([for id, subjects in var.github_federations :
+      contains(var.identities, id) &&
+      !contains(concat([for a in values(var.apps) : a.identity], [for j in values(var.jobs) : j.identity]), id) &&
+      !contains(flatten([for c in values(var.blob_containers) : keys(c.access)]), id) &&
+      !contains(var.telemetry_publishers, id) &&
+      !contains(try(concat(var.postgres.users, [var.postgres.admin_identity]), []), id) &&
+      length(subjects) > 0 && length(subjects) <= 5
+    ])
+    error_message = "a federated identity must be a listed identity that runs no app or job and has no blob, telemetry or database role; 1 to 5 subjects each"
+  }
+  validation {
+    # A branch or an environment, never a pull request (any fork could open one) and never a wildcard.
+    condition     = alltrue([for s in flatten(values(var.github_federations)) : can(regex("^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+:(ref:refs/heads/[A-Za-z0-9._/-]+|environment:[A-Za-z0-9._-]+)$", s))])
+    error_message = "subjects are repo:<owner>/<repo>:ref:refs/heads/<branch> or repo:<owner>/<repo>:environment:<name>"
+  }
+}
+
 variable "apps" {
   description = "Container apps by short name. image is a key of images or, for public images, a full reference."
   type = map(object({
