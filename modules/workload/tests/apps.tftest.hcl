@@ -336,10 +336,10 @@ run "immutable_subject_is_accepted" {
   command = plan
   variables {
     identities         = ["web", "api", "worker", "synthetic"]
-    github_federations = { synthetic = ["repo:owner@1234/repo@5678:ref:refs/heads/main"] }
+    github_federations = { synthetic = ["repo:owner@1234/repo@5678:ref:refs/heads/main", "repo:owner@1234/repo@5678:environment:synth-login"] }
   }
   assert {
-    condition     = length(azurerm_federated_identity_credential.github) == 1
-    error_message = "the immutable subject format (owner and repository ids) is a valid subject"
+    condition     = length(azurerm_federated_identity_credential.github) == 2
+    error_message = "the immutable subject format (owner and repository ids) is valid for a branch and an environment"
   }
 }
