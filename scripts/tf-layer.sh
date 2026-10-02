@@ -6,7 +6,7 @@
 #   apply       applies tfplan with the state lock
 #   verify      second plan after an apply, exit 0 = no changes, 2 = changes
 #   summary     per-type summary of tfplan (scripts/plan_summary.py)
-# Usage: bash scripts/tf-layer.sh <command> <platform|staging|nettest>
+# Usage: bash scripts/tf-layer.sh <command> <platform|staging|nettest|identity-staging>
 set -euo pipefail
 cmd=${1:?command}
 layer=${2:?layer}
@@ -24,6 +24,15 @@ case "$layer" in
     fi
     vars+=("-var-file=$cfg/terraform.tfvars")
     if [[ -f "$cfg/images.auto.tfvars.json" ]]; then vars+=("-var-file=$cfg/images.auto.tfvars.json"); fi
+    ;;
+  identity-staging)
+    # Customer identity (external tenant) registrations. Only ids and URLs come from the private configuration.
+    dir="$root/environments/identity-staging"; mode=suppress
+    cfg="${CONFIG_DIR:-$root/config}/staging"
+    if [[ ! -f "$cfg/identity.auto.tfvars" ]]; then
+      echo "::error::private configuration for ${layer} not found"; exit 2
+    fi
+    vars+=("-var-file=$cfg/identity.auto.tfvars")
     ;;
   *) echo "::error::unknown layer ${layer}"; exit 2 ;;
 esac

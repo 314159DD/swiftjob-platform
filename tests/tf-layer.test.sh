@@ -41,6 +41,16 @@ check "$(grep -c -- '-lock-timeout=5m' "$FAKE_TF_LOG")" 1 "apply-plan takes the 
 rc=0; FAKE_TF_EXIT=2 CONFIG_DIR="$tmp/config" bash "$script" plan staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "plan returns 2 on changes"
 
+# identity-staging: its own var file, no images file, suppress mode
+echo 'web_base_url = "https://x.example.test"' > "$tmp/config/staging/identity.auto.tfvars"
+: > "$FAKE_TF_LOG"; rc=0; out=$(FAKE_TF_EXIT=1 CONFIG_DIR="$tmp/config" bash "$script" plan identity-staging 2>&1) || rc=$?
+check "$(grep -c -- "-var-file=$tmp/config/staging/identity.auto.tfvars" "$FAKE_TF_LOG")" 1 "identity plan uses the identity var file"
+check "$(grep -c -- 'images.auto.tfvars.json' "$FAKE_TF_LOG" || true)" 0 "identity plan has no images file"
+check "$(grep -c 'bad value' <<< "$out" || true)" 0 "identity uses suppress mode"
+rm "$tmp/config/staging/identity.auto.tfvars"
+rc=0; CONFIG_DIR="$tmp/config" bash "$script" plan identity-staging > /dev/null 2>&1 || rc=$?
+check "$rc" 2 "missing identity configuration fails"
+
 # missing private configuration and unknown layer
 rc=0; CONFIG_DIR="$tmp/none" bash "$script" plan staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "missing private configuration fails"
