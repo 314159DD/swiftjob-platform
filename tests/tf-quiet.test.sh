@@ -35,6 +35,15 @@ check "$rc" 1 "summary keeps exit code"
 check "$(grep -c 'types=\[azurerm_role_assignment\] codes=\[ResourceNotFound\] status=\[404\]' <<< "$out" || true)" 1 "summary names type, code and status"
 check "$(grep -cE 'kv-private-name|vendor-key|secret_reader|11111111|Message' <<< "$out" || true)" 0 "summary leaks no names, keys or ids"
 
+# summary: azurerm text form and bare well-known words; unknown free text and unknown words stay out
+azerr2='Error: creating Container App Job: RESPONSE 403: 403 Forbidden
+ERROR CODE: AuthorizationFailed
+ContainerAppSecretKeyVaultUrlInvalid for secret vendor-key in kv-private-name, SomethingSecret
+  with module.workload.azurerm_container_app_job.this["job-x"],'
+rc=0; out=$(FAKE_TF_EXIT=1 FAKE_TF_STDERR="$azerr2" bash "$script" suppress -chdir=environments/staging apply tfplan 2>&1) || rc=$?
+check "$(grep -c 'types=\[azurerm_container_app_job\] codes=\[AuthorizationFailed ContainerAppSecretKeyVaultUrlInvalid Forbidden\] status=\[403\]' <<< "$out" || true)" 1 "summary names bare codes and RESPONSE status"
+check "$(grep -cE 'kv-private-name|vendor-key|job-x|SomethingSecret' <<< "$out" || true)" 0 "summary leaks no free text for bare codes"
+
 # allowed exit codes (plan -detailed-exitcode returns 2 for changes)
 rc=0; out=$(FAKE_TF_EXIT=2 TF_QUIET_OK_CODES="0 2" bash "$script" suppress plan 2>&1) || rc=$?
 check "$rc" 2 "exit code 2 preserved"

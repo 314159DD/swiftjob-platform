@@ -17,3 +17,12 @@ resource "azurerm_role_assignment" "secret_reader" {
   principal_id         = azurerm_user_assigned_identity.this[each.value.identity].principal_id
   principal_type       = "ServicePrincipal"
 }
+
+# A new role assignment takes a while to be effective. An app or job created before that fails on its Key Vault
+# reference, and the first apply then fails while a rerun succeeds. The wait runs only when the set of assignments
+# changes (triggers hold their ids), and apps and jobs depend on it instead of on the assignments directly.
+resource "time_sleep" "role_propagation" {
+  count           = length(azurerm_role_assignment.secret_reader) > 0 ? 1 : 0
+  create_duration = var.role_propagation_wait
+  triggers        = { assignments = join(",", sort([for r in azurerm_role_assignment.secret_reader : r.id])) }
+}

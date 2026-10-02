@@ -1,3 +1,5 @@
+mock_provider "time" {}
+
 mock_provider "azurerm" {
   mock_data "azurerm_resource_group" {
     defaults = {
@@ -141,6 +143,37 @@ run "each_identity_reads_only_its_secrets" {
     condition     = alltrue([for r in azurerm_role_assignment.secret_reader : strcontains(r.scope, "/secrets/") && r.principal_type == "ServicePrincipal"])
     error_message = "grants are per secret and to service principals"
   }
+}
+
+run "apps_and_jobs_wait_for_role_propagation" {
+  command = apply
+  assert {
+    condition     = length(time_sleep.role_propagation) == 1 && time_sleep.role_propagation[0].create_duration == "90s"
+    error_message = "one 90 s wait after the secret reader role assignments"
+  }
+  assert {
+    condition     = length(time_sleep.role_propagation[0].triggers) == 1
+    error_message = "the wait is re-run only when the set of role assignments changes"
+  }
+}
+
+run "no_wait_without_grants" {
+  command = apply
+  variables {
+    apps_enabled = false
+  }
+  assert {
+    condition     = length(time_sleep.role_propagation) == 0
+    error_message = "no role assignments, no wait"
+  }
+}
+
+run "wait_must_be_a_duration" {
+  command = plan
+  variables {
+    role_propagation_wait = "soon"
+  }
+  expect_failures = [var.role_propagation_wait]
 }
 
 run "references_resolve" {
