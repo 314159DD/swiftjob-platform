@@ -26,8 +26,9 @@ if [[ " ${TF_QUIET_OK_CODES:-0} " != *" $rc "* ]]; then
     # Each value is cut down to a fixed character class before it is printed.
     pick() { { grep -oE "$1" "$err" || true; } | sed -E "$2" | sort -u | paste -sd ' ' -; }
     types=$(pick '(azurerm|azapi|azuread|random|time|null)_[a-z0-9_]+\.' 's/\.$//')
-    codes=$(pick '[Cc]ode[=:] ?"[A-Za-z][A-Za-z0-9]{1,60}"' 's/.*"([A-Za-z0-9]+)"/\1/')
-    status=$(pick 'StatusCode[=:] ?[1-5][0-9]{2}' 's/.*([1-5][0-9]{2})$/\1/')
+    # Codes: quoted Code="X", "ERROR CODE: X" (azurerm text) or one of a fixed list of well-known bare words.
+    codes=$(pick '([Cc]ode[=:] ?"[A-Za-z][A-Za-z0-9]{1,60}"|ERROR CODE: ?[A-Za-z][A-Za-z0-9]{1,60}|\b(Forbidden|AuthorizationFailed|KeyVaultReferenceError|ContainerAppSecretKeyVaultUrlInvalid|RoleAssignmentExists|PrincipalNotFound|ResourceNotFound|Conflict)\b)' 's/.*[^A-Za-z0-9]([A-Za-z0-9]+)"?$/\1/')
+    status=$(pick '(StatusCode[=:] ?|RESPONSE |unexpected status )[1-5][0-9]{2}' 's/.*([1-5][0-9]{2})$/\1/')
     echo "::error::withheld error summary: types=[${types}] codes=[${codes}] status=[${status}]" >&2
   fi
 fi
