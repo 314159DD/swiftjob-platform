@@ -55,3 +55,16 @@ Decisions taken in this phase: workload layer and private configuration (ADR 5),
 (ADR 6), compute region (ADR 7, superseded by ADR 8: compute in `swedencentral`, `northeurope` as fallback).
 
 Results and run IDs are in [verification.md](verification.md).
+
+## Phase 3 (2026-10-01 to 2026-10-02): database on Azure
+
+- Azure Database for PostgreSQL flexible server in `swedencentral` (ADR 9), Entra sign-in only, TLS 1.2 enforced,
+  no public access beyond the Azure services rule. Staging only.
+- A migration job runs the versioned schema as the migration identity and creates the application roles; it is
+  idempotent (second run applies 0). The database layer uses per-user row-level security, proven by an isolation
+  probe that also runs as a job.
+- The application no longer reads or writes its data through the old hosted database; the old identity provider is
+  used for sign-in only until phase 4.
+- Evidence (access test 14/14, isolation probe 31/31, product flows, break-glass, peak connections 12) is in
+  [verification.md](verification.md). The server cost check is pending until 2026-10-04.
+- Deferred to the owner: production export and the full data import (phase 5).
