@@ -87,6 +87,18 @@ variable "database_types" {
   default     = ["Microsoft.DBforPostgreSQL/flexibleServers"]
 }
 
+variable "identity_locations" {
+  description = "Locations allowed for the customer identity tenant resource only (ADR 10)."
+  type        = list(string)
+  default     = ["europe"]
+}
+
+variable "identity_types" {
+  description = "Resource types of the customer identity tenant."
+  type        = list(string)
+  default     = ["Microsoft.AzureActiveDirectory/ciamDirectories"]
+}
+
 variable "network_cost_exempt_resource_groups" {
   description = "Resource groups where a VNet Container Apps environment, a Standard load balancer or a private endpoint is allowed: the throwaway network tests. The -infra group is created by Container Apps itself."
   type        = list(string)

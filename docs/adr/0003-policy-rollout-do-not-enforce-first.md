@@ -76,7 +76,7 @@ rollout: assigned with `enforce_phase2_policies = false`, reviewed against the c
 
 | Assignment | Effect | Scope |
 |---|---|---|
-| `allowed-locations-v2` | Deny | `mg-swiftjob`. Germany West Central and `global` for every type, the Static Web Apps regions for that type only, the compute regions (`swedencentral`, `northeurope`) for the three Container Apps types only ([ADR 8](0008-compute-region-sweden-central.md)), and PostgreSQL flexible servers in the database region ([ADR 9](0009-postgresql-region-and-sign-in.md)) |
+| `allowed-locations-v2` | Deny | `mg-swiftjob`. Germany West Central and `global` for every type, the Static Web Apps regions for that type only, the compute regions (`swedencentral`, `northeurope`) for the three Container Apps types only ([ADR 8](0008-compute-region-sweden-central.md)), and PostgreSQL flexible servers in the database region ([ADR 9](0009-postgresql-region-and-sign-in.md)), and the customer identity tenant in the Europe geography ([ADR 10](0010-customer-identity-tenant.md)) |
 | `deny-pg-password-auth` | Deny | `mg-swiftjob`. PostgreSQL flexible servers must use Entra ID only |
 | `deny-network-cost` | Deny | `mg-workloads`, without the network test groups. No VNet Container Apps environment, no workload profile other than Consumption, no Standard load balancer, no private endpoint ([ADR 6](0006-no-virtual-network-before-revenue.md)) |
 | `audit-pna-keyvault`, `-storage`, `-postgres` | Audit | `mg-prod` and the production resource group. Public network access stays visible until the VNet switch |
