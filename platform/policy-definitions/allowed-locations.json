@@ -27,6 +27,14 @@
             { "field": "location", "in": "[parameters('databaseLocations')]" }
           ]
         }
+      },
+      {
+        "not": {
+          "allOf": [
+            { "field": "type", "in": "[parameters('identityTypes')]" },
+            { "field": "location", "in": "[parameters('identityLocations')]" }
+          ]
+        }
       }
     ]
   },
