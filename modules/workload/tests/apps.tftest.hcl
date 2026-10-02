@@ -232,6 +232,22 @@ run "missed_alert_window_is_an_allowed_value" {
   }
 }
 
+run "auth_orphan_alert_is_daily_on_the_log_line" {
+  command = apply
+  assert {
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].evaluation_frequency == "P1D" && azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].window_duration == "P1D"
+    error_message = "the orphan alert is evaluated daily over a one day window"
+  }
+  assert {
+    condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].criteria[0].query, "AUTH_ORPHAN_STALE count=")
+    error_message = "the query must match the backend log line"
+  }
+  assert {
+    condition     = contains(azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].action[0].action_groups, azurerm_monitor_action_group.email.id)
+    error_message = "the alert uses the existing e-mail action group"
+  }
+}
+
 run "nothing_is_deployed_while_apps_are_disabled" {
   command = apply
   variables {

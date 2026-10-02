@@ -118,3 +118,32 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_missed" {
   }
   tags = local.tags
 }
+
+# The identity cleanup retry job logs AUTH_ORPHAN_STALE when a deleted account's login is still undeleted after
+# 7 days. Daily evaluation keeps the meter at the lowest log alert tier; the job and the API both write the line.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "auth_orphan_stale" {
+  count                   = var.apps_enabled && length(var.jobs) > 0 ? 1 : 0
+  name                    = "alert-${local.name}-auth-orphan-stale"
+  location                = var.location
+  resource_group_name     = data.azurerm_resource_group.this.name
+  scopes                  = [var.log_analytics_workspace_id]
+  description             = "Deleted accounts whose sign-in could not be removed from the identity provider for over 7 days (AUTH_ORPHAN_STALE)."
+  severity                = 2
+  evaluation_frequency    = "P1D"
+  window_duration         = "P1D"
+  auto_mitigation_enabled = true
+  criteria {
+    query                   = <<-KQL
+      ContainerAppConsoleLogs
+      | where _ResourceId contains "${local.rg_match}"
+      | where Log contains "AUTH_ORPHAN_STALE count="
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 0
+    operator                = "GreaterThan"
+  }
+  action {
+    action_groups = [azurerm_monitor_action_group.email.id]
+  }
+  tags = local.tags
+}
