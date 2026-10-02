@@ -3,4 +3,6 @@
 printf '%s\n' "$*" >> "${FAKE_TF_LOG:-/dev/null}"
 echo "STDOUT-PLAN-TEXT resource_name=vendor_api_key"
 echo "Error: bad value for secret_env in /subscriptions/11111111-2222-3333-4444-555555555555 owner a.person@example.com" >&2
+if [[ -n "${FAKE_TF_STDERR:-}" ]]; then printf '%s
+' "$FAKE_TF_STDERR" >&2; fi
 exit "${FAKE_TF_EXIT:-0}"

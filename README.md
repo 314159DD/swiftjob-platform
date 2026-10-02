@@ -75,7 +75,9 @@ The staging workload layer (`environments/staging`, built from `modules/workload
 Product configuration (names, settings, schedules, image digests) lives in a private repository. This repository
 holds only the code that consumes it ([ADR 5](docs/adr/0005-staging-workload-identity.md)).
 
-Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Terraform errors are redacted for the platform layer and withheld for layers with private inputs; the full text is only available in a private workflow.
+Workflows pin every action to a full commit SHA and use minimal permissions. Plan and apply output never goes to the log. Terraform errors are redacted for the platform layer and withheld for layers with private inputs; the full text of a plan error is only available in the private Diagnose workflow, which re-plans. An apply error cannot be replayed there, so the withheld message is followed by a summary line built only from resource types, Azure error codes and HTTP status codes (`withheld error summary: types=[...] codes=[...] status=[...]`).
+
+Known behaviour: an apply can fail part way, for example on a transient Azure error after secrets were loaded minutes before. Terraform records every finished change in state, so rerunning the failed job (`gh run rerun <id> --failed`) plans again from the new state and applies only the rest. The second plan and the smoke test then confirm the result. Read the summary line first: a code such as `AuthorizationFailed` or `InvalidTemplate` will fail again and needs a fix, not a rerun.
 
 ## Cost guardrails
 

@@ -25,6 +25,15 @@ rc=0; out=$(FAKE_TF_EXIT=1 bash "$script" suppress -chdir=environments/staging p
 check "$rc" 1 "suppress keeps exit code"
 check "$(grep -c 'bad value' <<< "$out" || true)" 0 "suppress mode prints no stderr"
 check "$(grep -c 'terraform plan failed with exit code 1' <<< "$out" || true)" 1 "suppress mode names subcommand and code"
+check "$(grep -c 'withheld error summary: types=\[\] codes=\[\] status=\[\]' <<< "$out" || true)" 1 "suppress mode prints an empty summary without matches"
+
+# suppress mode summary: only resource types, Azure error codes and HTTP status, never names or values
+azerr='Error: creating Role Assignment (Scope: "/subscriptions/11111111-2222-3333-4444-555555555555/vaults/kv-private-name/secrets/vendor-key"): unexpected status 404 (404 Not Found) with error: ResourceNotFound: StatusCode=404 Code="ResourceNotFound" Message="The resource kv-private-name was not found"
+  with module.workload.azurerm_role_assignment.secret_reader["vendor-key|api"],'
+rc=0; out=$(FAKE_TF_EXIT=1 FAKE_TF_STDERR="$azerr" bash "$script" suppress -chdir=environments/staging apply tfplan 2>&1) || rc=$?
+check "$rc" 1 "summary keeps exit code"
+check "$(grep -c 'types=\[azurerm_role_assignment\] codes=\[ResourceNotFound\] status=\[404\]' <<< "$out" || true)" 1 "summary names type, code and status"
+check "$(grep -cE 'kv-private-name|vendor-key|secret_reader|11111111|Message' <<< "$out" || true)" 0 "summary leaks no names, keys or ids"
 
 # allowed exit codes (plan -detailed-exitcode returns 2 for changes)
 rc=0; out=$(FAKE_TF_EXIT=2 TF_QUIET_OK_CODES="0 2" bash "$script" suppress plan 2>&1) || rc=$?
