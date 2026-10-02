@@ -1,5 +1,4 @@
 mock_provider "azuread" {
-  mock_data "azuread_client_config" { defaults = { object_id = "00000000-0000-0000-0000-0000000000aa" } }
   mock_data "azuread_application_published_app_ids" { defaults = { result = { MicrosoftGraph = "00000003-0000-0000-c000-000000000000" } } }
   mock_data "azuread_service_principal" {
     defaults = {
@@ -9,11 +8,17 @@ mock_provider "azuread" {
   }
 }
 
+override_data {
+  target = data.azuread_service_principal.deployer
+  values = { object_id = "00000000-0000-0000-0000-0000000000aa" }
+}
+
 variables {
-  environment   = "staging"
-  web_base_url  = "https://web.example.test"
-  admin_role_id = "11111111-2222-3333-4444-555555555555"
-  scope_id      = "66666666-7777-8888-9999-000000000000"
+  owner_client_id = "00000000-0000-0000-0000-0000000000bb"
+  environment     = "staging"
+  web_base_url    = "https://web.example.test"
+  admin_role_id   = "11111111-2222-3333-4444-555555555555"
+  scope_id        = "66666666-7777-8888-9999-000000000000"
 }
 
 run "api_issues_v2_tokens_with_scope_and_role" {
@@ -63,5 +68,25 @@ run "deleter_has_only_the_two_graph_roles" {
 run "rejects_http_base_url" {
   command = plan
   variables { web_base_url = "http://web.example.test" }
+  expect_failures = [var.web_base_url]
+}
+
+run "owners_are_the_deployer_not_the_caller" {
+  command = plan
+  assert {
+    condition     = azuread_application.api.owners == toset(["00000000-0000-0000-0000-0000000000aa"]) && azuread_application.web.owners == toset(["00000000-0000-0000-0000-0000000000aa"]) && azuread_application.deleter.owners == toset(["00000000-0000-0000-0000-0000000000aa"])
+    error_message = "all three apps are owned by the deployer service principal looked up by client id"
+  }
+}
+
+run "rejects_wildcard_host" {
+  command = plan
+  variables { web_base_url = "https://*.example.test" }
+  expect_failures = [var.web_base_url]
+}
+
+run "rejects_port" {
+  command = plan
+  variables { web_base_url = "https://web.example.test:8443" }
   expect_failures = [var.web_base_url]
 }

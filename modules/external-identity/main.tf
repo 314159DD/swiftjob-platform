@@ -1,12 +1,17 @@
-data "azuread_client_config" "current" {}
 data "azuread_application_published_app_ids" "well_known" {}
 
 data "azuread_service_principal" "graph" {
   client_id = data.azuread_application_published_app_ids.well_known.result["MicrosoftGraph"]
 }
 
+# The owner is the apply identity looked up by client id, not the signed-in caller: the read-only plan job and the apply
+# job must propose the same owners, otherwise every plan after the first apply shows a diff.
+data "azuread_service_principal" "deployer" {
+  client_id = var.owner_client_id
+}
+
 locals {
-  owners = [data.azuread_client_config.current.object_id] # Application.ReadWrite.OwnedBy: the pipeline owns what it creates
+  owners = [data.azuread_service_principal.deployer.object_id] # Application.ReadWrite.OwnedBy: the pipeline owns what it creates
 }
 
 resource "azuread_application" "api" {
@@ -41,7 +46,10 @@ resource "azuread_application" "api" {
     access_token { name = "email" }
   }
 
-  lifecycle { ignore_changes = [identifier_uris] }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [identifier_uris]
+  }
 }
 
 resource "azuread_application_identifier_uri" "api" {
@@ -97,6 +105,8 @@ resource "azuread_application" "web" {
       type = "Scope"
     }
   }
+
+  lifecycle { prevent_destroy = true }
 }
 
 resource "azuread_service_principal" "web" {
@@ -120,6 +130,8 @@ resource "azuread_application" "deleter" {
       type = "Role"
     }
   }
+
+  lifecycle { prevent_destroy = true }
 }
 
 resource "azuread_service_principal" "deleter" {
