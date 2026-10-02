@@ -22,7 +22,7 @@ data "azurerm_resource_group" "prod" {
 
 # Allowed regions: Germany West Central and global for everything, the Static Web Apps regions for that type only,
 # the compute region for the Container Apps types only (ADR 8), and the database region for PostgreSQL flexible
-# servers only (ADR 9).
+# servers only (ADR 9), and the identity geography for the customer identity tenant only (ADR 10).
 # Replaced allowed-locations (removed in PR #21, ADR 3), which allowed eastus2, westeurope, swedencentral and
 # northeurope for every type.
 resource "azurerm_policy_definition" "allowed_locations" {
@@ -39,6 +39,8 @@ resource "azurerm_policy_definition" "allowed_locations" {
     computeTypes           = { type = "Array", defaultValue = ["Microsoft.App/managedEnvironments", "Microsoft.App/containerApps", "Microsoft.App/jobs"], metadata = { displayName = "Resource types of the Container Apps compute layer" } }
     databaseLocations      = { type = "Array", defaultValue = ["swedencentral"], metadata = { displayName = "Allowed locations for the database (ADR 9)" } }
     databaseTypes          = { type = "Array", defaultValue = ["Microsoft.DBforPostgreSQL/flexibleServers"], metadata = { displayName = "Resource types of the database" } }
+    identityLocations      = { type = "Array", defaultValue = ["europe"], metadata = { displayName = "Allowed locations for the customer identity tenant (ADR 10)" } }
+    identityTypes          = { type = "Array", defaultValue = ["Microsoft.AzureActiveDirectory/ciamDirectories"], metadata = { displayName = "Resource types of the customer identity tenant" } }
   })
 }
 
@@ -55,6 +57,8 @@ resource "azurerm_management_group_policy_assignment" "allowed_locations_v2" {
     computeTypes           = { value = var.compute_types }
     databaseLocations      = { value = var.database_locations }
     databaseTypes          = { value = var.database_types }
+    identityLocations      = { value = var.identity_locations }
+    identityTypes          = { value = var.identity_types }
   })
 }
 

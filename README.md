@@ -37,7 +37,7 @@ main branch of the private configuration repository)
 
 | Policy | Effect | Reason |
 |---|---|---|
-| `allowed-locations-v2` | Deny | Keeps resources in Germany West Central and `global`. The two regions Static Web Apps need are allowed for that type only, `swedencentral` and `northeurope` for the Container Apps types only ([ADR 8](docs/adr/0008-compute-region-sweden-central.md)). Replaces `allowed-locations` |
+| `allowed-locations-v2` | Deny | Keeps resources in Germany West Central and `global`. The two regions Static Web Apps need are allowed for that type only, `swedencentral` and `northeurope` for the Container Apps types only ([ADR 8](docs/adr/0008-compute-region-sweden-central.md)), the customer identity tenant in the Europe geography only ([ADR 10](docs/adr/0010-customer-identity-tenant.md)). Replaces `allowed-locations` |
 | `allowed-rg-locations` | Deny | Resource group regions. Unchanged in phase 2 because the resource groups of the other project live in West Europe |
 | `require-rg-tag-project`, `-env`, `-owner` | Deny | Every resource group says what it is for and who owns it |
 | `deny-storage-shared-key` | Deny | Storage is reached through Entra ID, never through account keys |
@@ -110,6 +110,8 @@ Known behaviour: an apply can fail part way, for example on a transient Azure er
 - [ADR 6: No custom virtual network before revenue](docs/adr/0006-no-virtual-network-before-revenue.md)
 - [ADR 7: Compute in West Europe, data in Germany](docs/adr/0007-compute-region.md) (superseded)
 - [ADR 8: Compute in Sweden Central, data in Germany West Central](docs/adr/0008-compute-region-sweden-central.md)
+- [ADR 9: PostgreSQL in Sweden Central, Entra ID sign-in only](docs/adr/0009-postgresql-region-and-sign-in.md)
+- [ADR 10: Customer sign-in in a separate external tenant](docs/adr/0010-customer-identity-tenant.md)
 - [Verification log](docs/verification.md)
 - [Migration log](docs/migration-log.md)
 
