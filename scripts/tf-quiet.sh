@@ -3,6 +3,8 @@
 #   redact:   on failure, standard error is printed through scripts/redact.sh
 #   suppress: on failure, only "terraform <cmd> failed with exit code N" is printed. Used for layers whose inputs
 #             are private: an error message can quote a variable value or a resource address from the private config.
+#             A second line names what failed from an allowlist only: resource types (public code), Azure error codes
+#             and HTTP status codes. The Diagnose workflow re-plans, so an apply-time error is otherwise lost.
 # TF_QUIET_OK_CODES lists exit codes that count as success (default "0"; plan -detailed-exitcode uses "0 2").
 set -euo pipefail
 mode=${1:-}
@@ -21,6 +23,12 @@ if [[ " ${TF_QUIET_OK_CODES:-0} " != *" $rc "* ]]; then
     bash "${TF_QUIET_REDACT:-$(dirname "$0")/redact.sh}" < "$err" >&2 || echo "::error::redaction failed, error output withheld" >&2
   else
     echo "::error::terraform ${sub:-command} failed with exit code ${rc}. Its error output is withheld because this layer has private inputs; run the Diagnose workflow in the configuration repository for the full text." >&2
+    # Each value is cut down to a fixed character class before it is printed.
+    pick() { { grep -oE "$1" "$err" || true; } | sed -E "$2" | sort -u | paste -sd ' ' -; }
+    types=$(pick '(azurerm|azapi|azuread|random|time|null)_[a-z0-9_]+\.' 's/\.$//')
+    codes=$(pick '[Cc]ode[=:] ?"[A-Za-z][A-Za-z0-9]{1,60}"' 's/.*"([A-Za-z0-9]+)"/\1/')
+    status=$(pick 'StatusCode[=:] ?[1-5][0-9]{2}' 's/.*([1-5][0-9]{2})$/\1/')
+    echo "::error::withheld error summary: types=[${types}] codes=[${codes}] status=[${status}]" >&2
   fi
 fi
 exit "$rc"
