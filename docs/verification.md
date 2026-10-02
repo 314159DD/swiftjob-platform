@@ -124,6 +124,50 @@ In each of the three private application repositories the tag `pre-azure-2026-09
   [36693775325](https://github.com/314159DD/swiftjob-platform/actions/runs/36693775325) (PR #23) was green with "No changes", so the custom
   `swiftjob-plan-reader` role needed no further action (ADR 5). The first nightly Drift with both legs is not yet recorded.
 
+## 2026-10-01 to 2026-10-02: phase 3, database on Azure
+
+Server facts (staging): `psql-swiftjob-staging-0708df`, Sweden Central (ADR 9), Standard_B1ms Burstable, PostgreSQL 17, 32 GB
+storage with autogrow off, backup retention 7 days, geo-redundant backup off, high availability off. Password
+sign-in is disabled and Entra sign-in enabled; two Entra administrators (the migration identity and the owner).
+`require_secure_transport` is on, minimum TLS 1.2. The only firewall rule is `allow-azure-services`. It is the only
+PostgreSQL server in the subscription.
+
+Alerts: `alert-swiftjob-staging-pg-cpu`, `alert-swiftjob-staging-pg-storage`, `alert-swiftjob-staging-pg-connections`.
+Budgets unchanged: subscription 25 EUR and staging 5 EUR, each at 50, 80 and 100 percent.
+
+- Server apply: [36844822374](https://github.com/314159DD/swiftjob-platform/actions/runs/36844822374) green and idempotent (second plan "no changes").
+- Access test: [36846067177](https://github.com/314159DD/swiftjob-platform/actions/runs/36846067177) 12 PASS, 1 FAIL (the foreign-identity refusal returned the same text as a
+  wrong password). Fixed with a token control in the test (PR #32) and `REQUIRE_POSTGRES=1` (PR #33).
+  [36847206200](https://github.com/314159DD/swiftjob-platform/actions/runs/36847206200) on main: **14/14 PASS with `REQUIRE_POSTGRES=1`**.
+- First migration on Azure, 2026-10-01 18:43Z: execution `job-staging-db-migrate-b7edl6y` applied=12 principals=3; rerun
+  `job-staging-db-migrate-08xza5h` applied=0 (idempotent). Config apply
+  [36908646456](https://github.com/314159DD/swiftjob-platform/actions/runs/36908646456). A first attempt failed with `ImagePullUnauthorized` because the registry pull
+  secret held 1 character; the owner stored the real token and the job ran.
+- Real workload on staging, 2026-10-02: config PR #19, apply [37010659140](https://github.com/314159DD/swiftjob-platform/actions/runs/37010659140) (attempt 1 failed in
+  Apply after 27 s with the error text withheld, attempt 2 via `gh run rerun --failed` green, second plan no
+  changes). Smoke 6/6 PASS. Migration rerun on the new image: applied=0 principals=3.
+- RLS check as a job: `job-staging-db-rls-check-5xdgsvs` Succeeded, `RLS_CHECK tables=31 isolated=31 failed=0`
+  (local run of the same probe earlier: also all isolated).
+- Product flows on staging against the Azure database, all PASS: sign-in token (ES256) and profile creation on first
+  call, profile read and write, document upload and byte-identical download from object storage, settings, onboarding
+  completion, job listing, GDPR export, refresh-token grant, account deletion (200, then sign-in refused, old token
+  refused). Tombstone: right after deletion workers without the cached mapping answered 401 "Account deleted", after
+  615 s all 6 of 6 did (cache TTL 600 s, by design).
+- Payment provider, test mode only, end to end: checkout session 200, subscription updated moved the plan to pro,
+  subscription deleted moved it to free; webhook delivered, 0 pending.
+- Break-glass: the owner (Entra administrator) signed in to the staging database on 2026-10-02 through a temporary
+  firewall rule, which was removed afterwards (only `allow-azure-services` remains).
+- Platform apply [37017816376](https://github.com/314159DD/swiftjob-platform/actions/runs/37017816376) (PR #35, error summary for withheld apply failures) and staging apply
+  [37017816402](https://github.com/314159DD/swiftjob-platform/actions/runs/37017816402) green.
+- Peak connections: 12 (metric Maximum per 5 minutes, 2026-10-02 13:00 to 13:40Z) against a budget of 30 user
+  connections.
+- Token refresh window: unchanged in this phase; the refresh-token grant itself was proven (see product flows).
+- Cost of the PostgreSQL server: **pending**. Usage data lags 24 to 72 hours. Check on 2026-10-02 and again on
+  2026-10-04; expected 0 EUR with the free grant, otherwise about 0.53 EUR per day. If it is not zero, the owner
+  decides between stopping the server when no test runs and raising the staging budget to 20 EUR.
+- Deferred, owner-gated: the production data export (03a Task 1) and the import run (03d Task 4); the code for both
+  is merged.
+
 ## Findings during the build
 
 - ARM `az deployment group validate` needs write permission for every resource type in the template, like
