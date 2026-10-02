@@ -331,3 +331,15 @@ run "wildcard_subject_is_refused" {
   }
   expect_failures = [var.github_federations]
 }
+
+run "immutable_subject_is_accepted" {
+  command = plan
+  variables {
+    identities         = ["web", "api", "worker", "synthetic"]
+    github_federations = { synthetic = ["repo:owner@1234/repo@5678:ref:refs/heads/main"] }
+  }
+  assert {
+    condition     = length(azurerm_federated_identity_credential.github) == 1
+    error_message = "the immutable subject format (owner and repository ids) is a valid subject"
+  }
+}
