@@ -148,8 +148,9 @@ Budgets unchanged: subscription 25 EUR and staging 5 EUR, each at 50, 80 and 100
   changes). Smoke 6/6 PASS. Migration rerun on the new image: applied=0 principals=3.
 - RLS check as a job: `job-staging-db-rls-check-5xdgsvs` Succeeded, `RLS_CHECK tables=31 isolated=31 failed=0`
   (local run of the same probe earlier: also all isolated).
-- Product flows on staging against the Azure database, all PASS: sign-in token (ES256) and profile creation on first
-  call, profile read and write, document upload and byte-identical download from object storage, settings, onboarding
+- Product flows on staging against the Azure database, checked through the API with throwaway users created by an
+  administrator (sign-up is disabled on the staging login server; the browser UI and its network traffic were not
+  inspected). All PASS: sign-in token (ES256) and profile creation on first call, profile read and write, document upload and byte-identical download from object storage, settings, onboarding
   completion, job listing, GDPR export, refresh-token grant, account deletion (200, then sign-in refused, old token
   refused). Tombstone: right after deletion workers without the cached mapping answered 401 "Account deleted", after
   615 s all 6 of 6 did (cache TTL 600 s, by design).
@@ -161,12 +162,32 @@ Budgets unchanged: subscription 25 EUR and staging 5 EUR, each at 50, 80 and 100
   [37017816402](https://github.com/314159DD/swiftjob-platform/actions/runs/37017816402) green.
 - Peak connections: 12 (metric Maximum per 5 minutes, 2026-10-02 13:00 to 13:40Z) against a budget of 30 user
   connections.
-- Token refresh window: unchanged in this phase; the refresh-token grant itself was proven (see product flows).
+- Token refresh: only the refresh-token grant was proven (a new token was accepted by the API). The check with a
+  short token lifetime was not done.
 - Cost of the PostgreSQL server: **pending**. Usage data lags 24 to 72 hours. Check on 2026-10-02 and again on
   2026-10-04; expected 0 EUR with the free grant, otherwise about 0.53 EUR per day. If it is not zero, the owner
   decides between stopping the server when no test runs and raising the staging budget to 20 EUR.
 - Deferred, owner-gated: the production data export (03a Task 1) and the import run (03d Task 4); the code for both
   is merged.
+- **Not yet done** (03d Task 5): step 3 sign-up through the UI with a check of the browser network traffic; step 4
+  aggregator and evaluation runs against the Azure database (a dry-run aggregation, a health report, one evaluation
+  queue run, connections under that load; no model or source calls were run, by owner decision), so the aggregator image
+  has never run against it; step 5 token refresh with a short lifetime. Step 7 owner confirmation on the old
+  dashboard is also open. Peak connections above were measured under the product flows only.
+
+## 2026-10-02: phase 3 follow-ups on staging
+
+- Configuration PRs #24 and #25 (private repository) combined the image bumps and enabled four database-only jobs
+  (daily credit reset, purge of old tombstones, purge of expired anonymous results, retry of failed login deletions)
+  on the evaluate identity; every job that calls a model or an external source stays disabled. A read-only local plan
+  showed 10 to add, 16 to change in place and 1 to replace, with no new resource type.
+- Apply [37024661729](https://github.com/314159DD/swiftjob-platform/actions/runs/37024661729) green and idempotent (the first attempt, 37024470506, failed in Apply with the
+  error text withheld, the second run completed it).
+- Migration `job-staging-db-migrate-hklri7w`: applied=1 principals=3 (0019 grants); rerun `job-staging-db-migrate-2ng2pds`:
+  applied=0.
+- Each new job was started once, `JOB_RESULT status=ok`: credit-reset `users_reset=0`, purge-identities `purged=0`,
+  purge-ats-results `purged=0`, retry-auth-deletes `pending=0 cleared=0`.
+- Smoke: health check 200; the retired batch evaluation route answers 405 (no route).
 
 ## Findings during the build
 
