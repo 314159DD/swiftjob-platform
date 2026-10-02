@@ -269,3 +269,77 @@ run "image_key_without_digest_is_refused" {
   }
   expect_failures = [azurerm_container_app.this]
 }
+
+run "federated_identity_reads_only_its_secrets" {
+  command = apply
+  variables {
+    identities = ["web", "api", "worker", "synthetic"]
+    secrets = {
+      "registry-token" = { readers = [] }
+      "db-key"         = { readers = ["api", "worker"] }
+      "session-key"    = { readers = ["api"] }
+      "synth-login"    = { readers = ["synthetic"] }
+    }
+    github_federations = { synthetic = ["repo:owner/repo:ref:refs/heads/main"] }
+  }
+  assert {
+    condition     = length(azurerm_federated_identity_credential.github) == 1
+    error_message = "one federated credential per subject"
+  }
+  assert {
+    condition = alltrue([for c in azurerm_federated_identity_credential.github :
+      c.issuer == "https://token.actions.githubusercontent.com" && c.audience == tolist(["api://AzureADTokenExchange"]) &&
+    c.subject == "repo:owner/repo:ref:refs/heads/main"])
+    error_message = "GitHub issuer, the token exchange audience and the exact subject"
+  }
+  assert {
+    condition     = [for k in keys(azurerm_role_assignment.secret_reader) : k if endswith(k, "|synthetic")] == ["synth-login|synthetic"]
+    error_message = "the federated identity reads its own secret and nothing else (no registry token, it runs no app or job)"
+  }
+}
+
+run "app_identity_cannot_be_federated" {
+  command = plan
+  variables {
+    github_federations = { api = ["repo:owner/repo:ref:refs/heads/main"] }
+  }
+  expect_failures = [var.github_federations]
+}
+
+run "job_identity_cannot_be_federated" {
+  command = plan
+  variables {
+    github_federations = { worker = ["repo:owner/repo:ref:refs/heads/main"] }
+  }
+  expect_failures = [var.github_federations]
+}
+
+run "pull_request_subject_is_refused" {
+  command = plan
+  variables {
+    identities         = ["web", "api", "worker", "synthetic"]
+    github_federations = { synthetic = ["repo:owner/repo:pull_request"] }
+  }
+  expect_failures = [var.github_federations]
+}
+
+run "wildcard_subject_is_refused" {
+  command = plan
+  variables {
+    identities         = ["web", "api", "worker", "synthetic"]
+    github_federations = { synthetic = ["repo:owner/repo:ref:refs/heads/*"] }
+  }
+  expect_failures = [var.github_federations]
+}
+
+run "immutable_subject_is_accepted" {
+  command = plan
+  variables {
+    identities         = ["web", "api", "worker", "synthetic"]
+    github_federations = { synthetic = ["repo:owner@1234/repo@5678:ref:refs/heads/main", "repo:owner@1234/repo@5678:environment:synth-login"] }
+  }
+  assert {
+    condition     = length(azurerm_federated_identity_credential.github) == 2
+    error_message = "the immutable subject format (owner and repository ids) is valid for a branch and an environment"
+  }
+}
