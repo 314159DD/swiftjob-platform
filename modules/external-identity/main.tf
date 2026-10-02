@@ -68,6 +68,11 @@ resource "azuread_application" "web" {
   owners           = local.owners
   sign_in_audience = "AzureADMyOrg"
 
+  api {
+    # External tenants refuse applications that accept v1 access tokens (InvalidAccessTokenVersion).
+    requested_access_token_version = 2
+  }
+
   web {
     # The callback receives the auth code; /auth/signed-out is the post_logout_redirect_uri (Entra honours it only when
     # registered). It is a route handler that drops the query and redirects to /, so a code sent there is never shown.
@@ -118,6 +123,11 @@ resource "azuread_application" "deleter" {
   display_name     = "deleter-${var.environment}"
   owners           = local.owners
   sign_in_audience = "AzureADMyOrg"
+
+  api {
+    # External tenants refuse applications that accept v1 access tokens (InvalidAccessTokenVersion).
+    requested_access_token_version = 2
+  }
 
   required_resource_access {
     resource_app_id = data.azuread_service_principal.graph.client_id
