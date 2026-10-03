@@ -232,11 +232,11 @@ run "missed_alert_window_is_an_allowed_value" {
   }
 }
 
-run "auth_orphan_alert_is_daily_on_the_log_line" {
+run "auth_orphan_alert_is_hourly_on_the_log_line" {
   command = apply
   assert {
-    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].evaluation_frequency == "P1D" && azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].window_duration == "P1D"
-    error_message = "the orphan alert is evaluated daily over a one day window"
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].evaluation_frequency == "PT1H" && azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].window_duration == "P1D"
+    error_message = "the orphan alert is evaluated hourly over a one day window"
   }
   assert {
     condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.auth_orphan_stale[0].criteria[0].query, "AUTH_ORPHAN_STALE count=")
