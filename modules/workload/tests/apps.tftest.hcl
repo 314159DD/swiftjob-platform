@@ -95,11 +95,13 @@ variables {
     nightly = {
       identity   = "worker", image = "api", command = ["run"], args = ["nightly"], cpu = 0.25, memory = "0.5Gi"
       cron       = "0 3 * * *", enabled = true, timeout_seconds = 600, missed_alert_hours = 26
+      idle_alert = { hours = 6, counter = "new" }
       secret_env = { DB_KEY = "db-key" }
     }
     parked = {
-      identity = "worker", image = "api", command = ["run"], cpu = 0.25, memory = "0.5Gi"
-      cron     = "0 */4 * * *", enabled = false, timeout_seconds = 600, missed_alert_hours = 6
+      identity   = "worker", image = "api", command = ["run"], cpu = 0.25, memory = "0.5Gi"
+      cron       = "0 */4 * * *", enabled = false, timeout_seconds = 600, missed_alert_hours = 6
+      idle_alert = { hours = 6, counter = "new" }
     }
     weekly = {
       identity = "worker", image = "api", command = ["run"], cpu = 0.25, memory = "0.5Gi"
@@ -229,6 +231,26 @@ run "missed_alert_window_is_an_allowed_value" {
   assert {
     condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.job_missed["nightly"].criteria[0].query, "job-staging-nightly")
     error_message = "the query must filter on the job resource name"
+  }
+}
+
+run "idle_alert_only_for_enabled_scheduled_jobs_and_on_the_counter" {
+  command = apply
+  assert {
+    condition     = toset(keys(azurerm_monitor_scheduled_query_rules_alert_v2.job_idle)) == toset(["nightly"])
+    error_message = "idle alerts exist only for enabled scheduled jobs with idle_alert"
+  }
+  assert {
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.job_idle["nightly"].window_duration == "PT6H"
+    error_message = "6 hours is an allowed window as is"
+  }
+  assert {
+    condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.job_idle["nightly"].criteria[0].query, "ago(6h)") && strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.job_idle["nightly"].criteria[0].query, "status=ok .*[ =]new=[1-9]")
+    error_message = "the query must match a successful run with the counter above 0 in the exact hours"
+  }
+  assert {
+    condition     = contains(azurerm_monitor_scheduled_query_rules_alert_v2.job_idle["nightly"].action[0].action_groups, azurerm_monitor_action_group.email.id)
+    error_message = "the alert uses the existing e-mail action group"
   }
 }
 
