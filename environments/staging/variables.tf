@@ -111,6 +111,7 @@ variable "jobs" {
     env                = optional(map(string), {})
     secret_env         = optional(map(string), {})
     missed_alert_hours = optional(number)
+    idle_alert         = optional(object({ hours = number, counter = string }))
   }))
   default = {}
 }
