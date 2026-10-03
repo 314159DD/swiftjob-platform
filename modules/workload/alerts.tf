@@ -6,6 +6,8 @@ locals {
   # Log alert windows must be PT5M to PT6H, P1D or P2D. The window is the smallest allowed one that covers the
   # requested hours; the query filters the exact hours, so the effective window stays as requested.
   missed_window = { for k, j in local.missed_watched : k => (j.missed_alert_hours <= 6 ? "PT${j.missed_alert_hours}H" : (j.missed_alert_hours <= 24 ? "P1D" : "P2D")) }
+  idle_watched  = var.apps_enabled ? { for k, j in var.jobs : k => j if j.enabled && j.cron != null && j.idle_alert != null } : {}
+  idle_window   = { for k, j in local.idle_watched : k => (j.idle_alert.hours <= 6 ? "PT${j.idle_alert.hours}H" : (j.idle_alert.hours <= 24 ? "P1D" : "P2D")) }
 }
 
 resource "azurerm_monitor_metric_alert" "api_5xx" {
@@ -108,6 +110,37 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_missed" {
       | where _ResourceId contains "${local.rg_match}"
       | where JobName == "job-${var.environment}-${each.key}"
       | where Log matches regex @"JOB_RESULT job=${each.key} status=ok "
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "LessThan"
+  }
+  action {
+    action_groups = [azurerm_monitor_action_group.email.id]
+  }
+  tags = local.tags
+}
+
+# Runs green but brings nothing: no successful run reported <counter>=<n> with n above 0 within the hours (a feed whose
+# source stopped producing). Failures and missed runs have their own alerts.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_idle" {
+  for_each                = local.idle_watched
+  name                    = "alert-${local.name}-idle-${each.key}"
+  location                = var.location
+  resource_group_name     = data.azurerm_resource_group.this.name
+  scopes                  = [var.log_analytics_workspace_id]
+  description             = "Job ${each.key} produced no new rows (${each.value.idle_alert.counter}) in ${each.value.idle_alert.hours} hours."
+  severity                = 2
+  evaluation_frequency    = "PT1H"
+  window_duration         = local.idle_window[each.key]
+  auto_mitigation_enabled = true
+  criteria {
+    query                   = <<-KQL
+      ContainerAppConsoleLogs
+      | where TimeGenerated > ago(${each.value.idle_alert.hours}h)
+      | where _ResourceId contains "${local.rg_match}"
+      | where JobName == "job-${var.environment}-${each.key}"
+      | where Log matches regex @"JOB_RESULT job=${each.key} status=ok .*[ =]${each.value.idle_alert.counter}=[1-9]"
     KQL
     time_aggregation_method = "Count"
     threshold               = 1
