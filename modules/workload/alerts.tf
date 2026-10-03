@@ -120,7 +120,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_missed" {
 }
 
 # The identity cleanup retry job logs AUTH_ORPHAN_STALE when a deleted account's login is still undeleted after
-# 7 days. Daily evaluation keeps the meter at the lowest log alert tier; the job and the API both write the line.
+# 7 days. Hourly evaluation over a one-day window, like job_missed: Azure refuses P1D evaluation together with
+# auto-mitigation (HTTP 400 on apply 2026-10-03). The job and the API both write the line.
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "auth_orphan_stale" {
   count                   = var.apps_enabled && length(var.jobs) > 0 ? 1 : 0
   name                    = "alert-${local.name}-auth-orphan-stale"
@@ -129,7 +130,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "auth_orphan_stale" {
   scopes                  = [var.log_analytics_workspace_id]
   description             = "Deleted accounts whose sign-in could not be removed from the identity provider for over 7 days (AUTH_ORPHAN_STALE)."
   severity                = 2
-  evaluation_frequency    = "P1D"
+  evaluation_frequency    = "PT1H"
   window_duration         = "P1D"
   auto_mitigation_enabled = true
   criteria {
