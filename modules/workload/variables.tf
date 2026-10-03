@@ -161,11 +161,18 @@ variable "jobs" {
     env                = optional(map(string), {})
     secret_env         = optional(map(string), {})
     missed_alert_hours = optional(number) # alert when no successful run within this many hours (1 to 48)
+    # alert when no successful run reported counter=<n> with n above 0 within hours (1 to 48), e.g. a feed that
+    # runs green but brings nothing new; the counter is a key of the JOB_RESULT detail
+    idle_alert = optional(object({ hours = number, counter = string }))
   }))
   default = {}
   validation {
     condition     = alltrue([for j in values(var.jobs) : j.missed_alert_hours == null || (j.missed_alert_hours >= 1 && j.missed_alert_hours <= 48 && floor(j.missed_alert_hours) == j.missed_alert_hours)])
     error_message = "missed_alert_hours must be a whole number between 1 and 48 (the alert window is rounded up to an allowed size and the query filters the exact hours)"
+  }
+  validation {
+    condition     = alltrue([for j in values(var.jobs) : j.idle_alert == null || (j.idle_alert.hours >= 1 && j.idle_alert.hours <= 48 && floor(j.idle_alert.hours) == j.idle_alert.hours && can(regex("^[a-z_]+$", j.idle_alert.counter)))])
+    error_message = "idle_alert.hours must be a whole number between 1 and 48 and idle_alert.counter a lower-case key of the JOB_RESULT detail"
   }
 }
 
