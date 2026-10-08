@@ -76,6 +76,14 @@ resource "azurerm_postgresql_flexible_server_configuration" "tls" {
   value     = each.value
 }
 
+# Allow-list for CREATE EXTENSION (e.g. pg_trgm for title autocomplete); the migration job creates the extension itself.
+resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
+  count     = local.pg_enabled && length(var.postgres.extensions) > 0 ? 1 : 0
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.this[0].id
+  value     = join(",", var.postgres.extensions)
+}
+
 # Consumption Container Apps without a VNet have no stable outbound address (ADR 9); the token is the boundary.
 resource "azurerm_postgresql_flexible_server_firewall_rule" "azure" {
   count            = local.pg_enabled ? 1 : 0

@@ -263,3 +263,11 @@ run "b2ms_is_refused" {
   }
   expect_failures = [var.postgres]
 }
+
+run "pg_trgm_is_allow_listed" {
+  command = apply
+  assert {
+    condition     = azurerm_postgresql_flexible_server_configuration.extensions[0].name == "azure.extensions" && azurerm_postgresql_flexible_server_configuration.extensions[0].value == "PG_TRGM"
+    error_message = "azure.extensions must default to PG_TRGM"
+  }
+}
