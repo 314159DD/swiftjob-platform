@@ -203,6 +203,8 @@ variable "postgres" {
     users          = list(string)
     # 80 % of the 35 user connections of B1ms (50 in total, 15 reserved by Azure)
     alert_connections = optional(number, 28)
+    # Extensions allow-listed for CREATE EXTENSION (azure.extensions); the migration job creates them
+    extensions = optional(list(string), ["PG_TRGM"])
   })
   default = null
   validation {
@@ -216,6 +218,10 @@ variable "postgres" {
   validation {
     condition     = var.postgres == null || (contains(var.identities, try(var.postgres.admin_identity, "")) && alltrue([for u in try(var.postgres.users, []) : contains(var.identities, u)]))
     error_message = "postgres.admin_identity and postgres.users must be listed identities"
+  }
+  validation {
+    condition     = var.postgres == null || alltrue([for e in try(var.postgres.extensions, []) : can(regex("^[A-Z][A-Z0-9_]*$", e))])
+    error_message = "postgres.extensions are upper-case extension names such as PG_TRGM"
   }
   validation {
     condition     = var.postgres == null || can(regex("^[a-z][a-z0-9_]{1,30}$", try(var.postgres.database, "")))

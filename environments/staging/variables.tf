@@ -139,6 +139,8 @@ variable "postgres" {
     users          = list(string)
     # 80 % of the 35 user connections of B1ms (50 in total, 15 reserved by Azure)
     alert_connections = optional(number, 28)
+    # Extensions allow-listed for CREATE EXTENSION (azure.extensions); the migration job creates them
+    extensions = optional(list(string), ["PG_TRGM"])
   })
   default = null
 }
