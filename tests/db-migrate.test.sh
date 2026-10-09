@@ -25,6 +25,9 @@ case "$*" in
       noname) exit 0 ;;
       fail) echo "(Forbidden) /subscriptions/SECRET-ID" >&2; exit 1 ;;
     esac ;;
+  "containerapp job stop"*)
+    [[ "${AZ_STOP_FAIL:-0}" == 1 ]] && { echo "(Forbidden) /subscriptions/SECRET-ID" >&2; exit 1; }
+    echo "stopped-output-SECRET-ID" ;;
   "containerapp job execution show"*)
     [[ "${AZ_SHOW_FAIL:-0}" == 1 ]] && { echo "boom SECRET-ID" >&2; exit 1; }
     n=$(cat "$AZ_STATE" 2>/dev/null || echo 0); echo $((n + 1)) > "$AZ_STATE"
@@ -34,6 +37,8 @@ STUB
 cat > "$tmp/tf-layer.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$TF_LOG"
+[[ "$1" == migrate-check && "${TF_CHECK_FAIL:-0}" == 1 ]] && exit 1
+exit 0
 STUB
 chmod +x "$tmp/bin/az" "$tmp/tf-layer.sh"
 export PATH="$tmp/bin:$PATH" TF_LAYER="$tmp/tf-layer.sh" AZ_LOG="$tmp/az.log" AZ_STATE="$tmp/state" TF_LOG="$tmp/tf.log"
@@ -42,7 +47,7 @@ run() { : > "$AZ_LOG"; : > "$TF_LOG"; : > "$GITHUB_OUTPUT"; rm -f "$AZ_STATE"; r
 
 run AZ_STATUSES="Running Running Succeeded"
 check "$rc" 0 "Succeeded after Running passes"
-check "$(tr '\n' '|' < "$TF_LOG")" "migrate-plan staging|migrate-apply staging|" "the job is updated through the targeted plan and apply, in that order"
+check "$(tr '\n' '|' < "$TF_LOG")" "migrate-plan staging|migrate-check staging|migrate-apply staging|" "the job is updated through the targeted plan and apply, in that order"
 check "$(grep -c 'execution show' "$AZ_LOG")" 3 "it polls until the end"
 
 run AZ_STATUSES="Running Failed"
@@ -55,6 +60,22 @@ check "$rc" 1 "Stopped fails the step"
 run AZ_STATUSES="Running"
 check "$rc" 1 "a run that never ends times out"
 check "$(grep -c 'did not finish within' <<< "$out")" 1 "the timeout is named"
+check "$(grep -c 'job stop .*--job-execution-name job-staging-db-migrate-abc123' "$AZ_LOG")" 1 "a timed-out execution is stopped"
+check "$(grep -c 'SECRET-ID' <<< "$out" || true)" 0 "the stop output is not printed"
+
+run AZ_STATUSES="Running" AZ_STOP_FAIL=1
+check "$rc" 1 "a failing stop still fails the step"
+check "$(grep -c 'SECRET-ID' <<< "$out" || true)" 0 "stop errors are not printed"
+check "$(grep -c 'Forbidden' <<< "$out")" 1 "an allowlisted stop error code is printed"
+
+run AZ_STATUSES="Succeeded"
+check "$(grep -c 'job stop' "$AZ_LOG" || true)" 0 "a successful run is not stopped"
+
+run AZ_STATUSES="Succeeded" TF_CHECK_FAIL=1
+check "$rc" 1 "a targeted plan without the job fails before anything is applied"
+check "$(tr '
+' '|' < "$TF_LOG")" "migrate-plan staging|migrate-check staging|" "the check runs after the plan and the apply never happens"
+check "$(grep -c 'job start' "$AZ_LOG" || true)" 0 "nothing is started when the guard fails"
 
 run AZ_STATUSES="Succeeded" AZ_START=fail
 check "$rc" 1 "a failed start fails the step"
