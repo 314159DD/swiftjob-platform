@@ -138,7 +138,6 @@ Owner inputs first (names only, values are public URLs):
 |---|---|---|
 | frontend repository variable | `PROD_API_URL` | `https://api.swiftjob.de` |
 | frontend repository variable | `PROD_WEB_URL` | `https://swiftjob.de` |
-| configuration repository, branch protection of `main` | required check `Promote gate` | set after the first promote pull request has run once |
 
 The Entra tenant and client ids are not build arguments: they are runtime settings from `prod/terraform.tfvars`.
 
@@ -165,6 +164,10 @@ The Entra tenant and client ids are not build arguments: they are runtime settin
    `swiftjob-web:prod-<sha>` and pushes `promote/web-<12 hex>` to the configuration repository.
 4. **Gate.** In each promote pull request tick `Onboarding probe passed against staging for this commit (<12 hex>)`.
    The check `Promote gate` fails while it is unticked or names another commit; ticking it runs the check. Merge.
+   The check is advisory: the private configuration repository is on a plan without branch protection, so it cannot be a
+   required check (GitHub Pro would allow that; it is the owner's optional call). The gate is enforced when production
+   is applied: `apply-prod.yml` runs `check-prod-config.py --strict` and `scripts/prod-provenance.sh` (api, db and
+   aggregator digests must appear in the staging image history on main, the web digest must not) before any plan.
 5. In the private configuration set `apps_enabled = true` (first apply only), merge, then:
 
 ```bash
@@ -174,7 +177,7 @@ gh workflow run apply-prod.yml -R 314159DD/swiftjob-platform -f config_ref=<conf
 Expected in the log: `db-migrate` execution succeeded before the apps change, delete guard green twice, apply, second
 plan empty, state secret check clean, smoke test green against the default host names.
 
-## 8. DNS records at Hostinger (owner), then custom domains (controller)
+## 8. DNS records at your DNS provider (owner), then custom domains (controller)
 
 Controller reads the values (identifiers, not credentials):
 
@@ -184,7 +187,7 @@ az containerapp show -g rg-swiftjob-prod -n ca-swiftjob-prod-web --query propert
 az containerapp show -g rg-swiftjob-prod -n ca-swiftjob-prod-api --query properties.configuration.ingress.fqdn -o tsv
 ```
 
-Owner, hPanel, Domains, swiftjob.de, **DNS / Nameservers**, DNS records. Before the cutover only add the three TXT
+Owner, in the DNS zone of swiftjob.de at your DNS provider. Before the cutover only add the three TXT
 records (they change nothing live):
 
 | Type | Name | Value |
@@ -194,7 +197,7 @@ records (they change nothing live):
 | TXT | `asuid.api` | verification id |
 
 If a CAA record exists on the root it must allow `digicert.com`. Lower the TTL of the live records to 300 seconds (or
-the Hostinger minimum) a day before the cutover. The cutover itself is the change of the live records, in one window:
+the provider's minimum) a day before the cutover. The cutover itself is the change of the live records, in one window:
 
 | Type | Name | Value |
 |---|---|---|

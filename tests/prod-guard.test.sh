@@ -10,7 +10,7 @@ plan() { # type actions-json
 }
 run() { rc=0; out=$(python3 "$guard" 2>&1) || rc=$?; }
 
-for t in azurerm_postgresql_flexible_server azurerm_storage_account azurerm_key_vault; do
+for t in azurerm_postgresql_flexible_server azurerm_storage_account azurerm_key_vault azurerm_storage_container azurerm_user_assigned_identity; do
   plan "$t" '["delete"]' | { run; check "$rc" 1 "$t delete fails"; }
   rc=0; out=$(plan "$t" '["delete","create"]' | python3 "$guard" 2>&1) || rc=$?
   check "$rc" 1 "$t replace fails"
@@ -22,7 +22,7 @@ for t in azurerm_postgresql_flexible_server azurerm_storage_account azurerm_key_
   check "$rc" 0 "$t create passes"
 done
 
-# a replaced container app (not guarded) passes: only the three data resources are protected
+# a replaced container app (not guarded) passes: only the guarded data and identity resources are protected
 rc=0; out=$(echo '{"format_version":"1.2","resource_changes":[{"type":"azurerm_container_app","change":{"actions":["delete","create"]}}]}' | python3 "$guard" 2>&1) || rc=$?
 check "$rc" 0 "an app replacement passes"
 rc=0; out=$(echo '{"format_version":"1.2"}' | python3 "$guard" 2>&1) || rc=$?
