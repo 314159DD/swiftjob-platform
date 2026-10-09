@@ -87,7 +87,6 @@ jobs:
       - name: Plan
         run: |
           bash scripts/tf-layer.sh apply-plan prod
-          bash scripts/tf-layer.sh summary prod >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
       - name: Delete guard (plan)
         run: bash scripts/tf-layer.sh guard prod | tee -a "$GITHUB_STEP_SUMMARY"
       # The OIDC token of the Terraform sign-in can expire during a long run; the migration signs in on its own.
@@ -103,7 +102,9 @@ jobs:
         run: bash scripts/db-migrate.sh prod
       # The targeted apply changed the state, so the plan above is stale. The full plan is made again from the new state.
       - name: Plan again after the migration
-        run: bash scripts/tf-layer.sh apply-plan prod
+        run: |
+          bash scripts/tf-layer.sh apply-plan prod
+          bash scripts/tf-layer.sh summary prod >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
       - name: Delete guard (plan to apply)
         run: bash scripts/tf-layer.sh guard prod | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Apply
