@@ -26,7 +26,7 @@
 # error code from a short allowlist is. The digest, the execution name and resource IDs are never printed.
 # Without the job (first deploy of an environment) the full mode defers: it writes deferred=true to GITHUB_OUTPUT and
 # the workflow calls run-only after the apply that creates the job.
-# Env: DB_MIGRATE_TIMEOUT_S (default 900), DB_MIGRATE_POLL_S (default 10), DB_MIGRATE_RG, TF_LAYER (test hook).
+# Env: DB_MIGRATE_TIMEOUT_S (default 1200, the job's replica_timeout is 900 and image pull and start count against it), DB_MIGRATE_POLL_S (default 10), DB_MIGRATE_RG, TF_LAYER (test hook).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 env_name=${1:-}; mode=${2:-full}
@@ -34,7 +34,7 @@ case "$env_name" in staging|prod) ;; *) echo "::error::usage: db-migrate.sh <sta
 case "$mode" in full|run-only) ;; *) echo "::error::unknown mode"; exit 64 ;; esac
 rg=${DB_MIGRATE_RG:-rg-swiftjob-${env_name}}
 job="job-${env_name}-db-migrate"
-timeout_s=${DB_MIGRATE_TIMEOUT_S:-900}; poll_s=${DB_MIGRATE_POLL_S:-10}
+timeout_s=${DB_MIGRATE_TIMEOUT_S:-1200}; poll_s=${DB_MIGRATE_POLL_S:-10}
 tf_layer=${TF_LAYER:-$root/scripts/tf-layer.sh}
 die() { echo "::error::database migration: $1"; exit 1; }
 err=$(mktemp); trap 'rm -f "$err"' EXIT
@@ -65,6 +65,8 @@ fi
 if [[ "$mode" == full ]]; then
   echo "Updating the migration job to the new image"
   bash "$tf_layer" migrate-plan "$env_name"
+  # A -target that matches nothing plans "No changes" and exits 0: the job would then run the OLD image.
+  bash "$tf_layer" migrate-check "$env_name" || die "the targeted plan does not contain the migration job"
   bash "$tf_layer" migrate-apply "$env_name"
 fi
 
@@ -95,6 +97,11 @@ while :; do
   fi
   if (( SECONDS >= deadline )); then
     [[ "$status" =~ ^[A-Za-z]{1,20}$ ]] || status=unknown
+    # Do not leave a half-run migration behind (the later retry would run next to it). Output is discarded; at most
+    # one allowlisted error code is named.
+    stop_rc=0
+    az containerapp job stop -g "$rg" -n "$job" --job-execution-name "$exec_name" > /dev/null 2> "$err" || stop_rc=$?
+    if (( stop_rc != 0 )); then echo "::warning::could not stop the timed-out execution (${stop_rc}, $(code))"; fi
     die "the migration did not finish within ${timeout_s}s (last status: ${status})"
   fi
   sleep "$poll_s"

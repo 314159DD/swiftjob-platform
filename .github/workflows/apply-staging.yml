@@ -98,7 +98,6 @@ jobs:
       - name: Plan
         run: |
           bash scripts/tf-layer.sh apply-plan staging
-          bash scripts/tf-layer.sh summary staging >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
       # The OIDC token of the Terraform sign-in can expire during a long run; the migration signs in on its own.
       - name: Sign in for the migration
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
@@ -112,7 +111,9 @@ jobs:
         run: bash scripts/db-migrate.sh staging
       # The targeted apply changed the state, so the plan above is stale. The full plan is made again from the new state.
       - name: Plan again after the migration
-        run: bash scripts/tf-layer.sh apply-plan staging
+        run: |
+          bash scripts/tf-layer.sh apply-plan staging
+          bash scripts/tf-layer.sh summary staging >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
       - name: Apply
         run: bash scripts/tf-layer.sh apply staging
       # Only on the first deploy of an environment: the apply created the job, so the migration runs now.

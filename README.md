@@ -85,7 +85,7 @@ Known behaviour: an apply can fail part way, for example on a transient Azure er
 (a targeted apply of the db-migrate job to the new image, one execution, polled until it succeeds or fails), then plan
 again, apply, verify, smoke test. A failed or timed-out migration stops the workflow with the apps still on the previous
 image. Rerunning the failed job is safe because the migrations are idempotent. The script takes the environment name, so
-the production apply can reuse it.
+the production apply will reuse it (prod layer added with plan 05 Task 3, `feat/prod-layer`).
 
 This order needs the expand/contract rule: every migration must work with the app code that is running while it
 executes (add first; drop or rename only in a later release, after no code uses the old shape).
