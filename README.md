@@ -79,6 +79,17 @@ Workflows pin every action to a full commit SHA and use minimal permissions. Pla
 
 Known behaviour: an apply can fail part way, for example on a transient Azure error after secrets were loaded minutes before. Terraform records every finished change in state, so rerunning the failed job (`gh run rerun <id> --failed`) plans again from the new state and applies only the rest. The second plan and the smoke test then confirm the result. Read the summary line first: a code such as `AuthorizationFailed` or `InvalidTemplate` will fail again and needs a fix, not a rerun.
 
+### Database migrations in the apply
+
+`Apply staging` runs the database migrations itself, before the apps are updated: plan, then `scripts/db-migrate.sh staging`
+(a targeted apply of the db-migrate job to the new image, one execution, polled until it succeeds or fails), then plan
+again, apply, verify, smoke test. A failed or timed-out migration stops the workflow with the apps still on the previous
+image. Rerunning the failed job is safe because the migrations are idempotent. The script takes the environment name, so
+the production apply can reuse it.
+
+This order needs the expand/contract rule: every migration must work with the app code that is running while it
+executes (add first; drop or rename only in a later release, after no code uses the old shape).
+
 ## Cost guardrails
 
 - A subscription budget of 25 EUR per month warns at 50 % and 80 % of actual spend and at 100 % of forecast.

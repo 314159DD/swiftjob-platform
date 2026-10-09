@@ -1,6 +1,11 @@
 # Applies the staging layer with tf-staging. Runs after a merge that changes the module or the staging root, on manual
 # dispatch from this repository, and when the private configuration repository dispatches it for a new configuration commit.
 # Nothing Terraform prints reaches this public log (scripts/tf-layer.sh, suppress mode).
+#
+# Order: plan, MIGRATE, plan again, apply. The database migrations run before the apps are updated (scripts/db-migrate.sh).
+# That is only safe with expand/contract: every migration must work with the app code that is still running, so a
+# migration adds (table, nullable column, index) and a drop or rename waits for a later release, after no code uses the
+# old shape. If the migration fails the workflow stops, the apps still run the previous image, and nothing was dropped.
 name: Apply staging
 
 on:
@@ -10,6 +15,7 @@ on:
       - "modules/**"
       - "environments/staging/**"
       - "scripts/tf-*.sh"
+      - "scripts/db-migrate.sh"
       - "scripts/state-check.sh"
       - "scripts/state-secret-check.sh"
       - "scripts/smoke-test.sh"
@@ -93,8 +99,26 @@ jobs:
         run: |
           bash scripts/tf-layer.sh apply-plan staging
           bash scripts/tf-layer.sh summary staging >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+      # The OIDC token of the Terraform sign-in can expire during a long run; the migration signs in on its own.
+      - name: Sign in for the migration
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Updates only the db-migrate job to the new image, runs it and waits. Fails the workflow unless it succeeded.
+      - name: Migrate the database (before the app update)
+        id: migrate
+        run: bash scripts/db-migrate.sh staging
+      # The targeted apply changed the state, so the plan above is stale. The full plan is made again from the new state.
+      - name: Plan again after the migration
+        run: bash scripts/tf-layer.sh apply-plan staging
       - name: Apply
         run: bash scripts/tf-layer.sh apply staging
+      # Only on the first deploy of an environment: the apply created the job, so the migration runs now.
+      - name: Migrate the database (job created by this apply)
+        if: steps.migrate.outputs.deferred == 'true'
+        run: bash scripts/db-migrate.sh staging run-only
       - name: Verify idempotency
         run: |
           rc=0
