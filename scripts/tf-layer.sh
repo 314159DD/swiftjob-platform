@@ -8,7 +8,8 @@
 #   summary     per-type summary of tfplan (scripts/plan_summary.py)
 #   guard [planfile]  fails when tfplan (or tfplan-db) deletes or replaces the PostgreSQL server, storage account Key Vault, CV container or a user-assigned identity (scripts/prod-guard.py)
 #   plan-has-migrate-job  exit 0 only if tfplan creates the db-migrate job (first apply with apps_enabled), else 1
-#   migrate-plan   plan for the db-migrate job only (-target), with the state lock, writes tfplan-db
+#   migrate-plan   plan for the db-migrate job only (-target), with the state lock, writes tfplan-db (one retry)
+#   migrate-plan-ro  the same targeted plan lock-free, for the read-only CI identity
 #   migrate-check  exit 0 only if the db-migrate job address is in tfplan-db (or in the state). A -target that matches nothing
 #                  plans "No changes" and exits 0, so without this check a wrong address would silently run the OLD image.
 #   migrate-apply  applies tfplan-db. scripts/db-migrate.sh uses both so the job runs the new image before the app update.
@@ -75,7 +76,16 @@ case "$cmd" in
   plan)       TF_QUIET_OK_CODES="0 2" q plan -input=false -lock=false -detailed-exitcode -out=tfplan "${vars[@]}" ;;
   apply-plan) q plan -input=false -lock-timeout=5m -out=tfplan "${vars[@]}" ;;
   apply)      q apply -input=false -lock-timeout=5m tfplan ;;
-  migrate-plan)  q plan -input=false -lock-timeout=5m -target="$DB_JOB_TARGET" -out=tfplan-db "${vars[@]}" ;;
+  # A plan writes nothing in Azure, so one retry is safe: a transient read error (timeout, reset connection) of the
+  # migration job must not stop a deploy. A deterministic error fails twice. TF_LAYER_RETRY_S is a test hook.
+  migrate-plan)
+    if ! q plan -input=false -lock-timeout=5m -target="$DB_JOB_TARGET" -out=tfplan-db "${vars[@]}"; then
+      echo "::warning::targeted plan failed, retrying once"
+      sleep "${TF_LAYER_RETRY_S:-30}"
+      q plan -input=false -lock-timeout=5m -target="$DB_JOB_TARGET" -out=tfplan-db "${vars[@]}"
+    fi ;;
+  # The same targeted plan, lock-free for the read-only CI identity: CI proves the migrate path plans before a merge.
+  migrate-plan-ro) q plan -input=false -lock=false -target="$DB_JOB_TARGET" -out=tfplan-db "${vars[@]}" ;;
   migrate-check)
     # Fixed messages only: nothing from the plan or the state is printed.
     if terraform -chdir="$dir" show -json tfplan-db 2> /dev/null | TARGET="$DB_JOB_TARGET" python3 -c '

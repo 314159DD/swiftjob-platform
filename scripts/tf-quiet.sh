@@ -3,8 +3,9 @@
 #   redact:   on failure, standard error is printed through scripts/redact.sh
 #   suppress: on failure, only "terraform <cmd> failed with exit code N" is printed. Used for layers whose inputs
 #             are private: an error message can quote a variable value or a resource address from the private config.
-#             A second line names what failed from an allowlist only: resource types (public code), Azure error codes
-#             and HTTP status codes. The Diagnose workflow re-plans, so an apply-time error is otherwise lost.
+#             A second line names what failed from an allowlist only: resource types (public code), Azure error codes,
+#             HTTP status codes and fixed error kinds (timeout, connection, state-lock, throttled, token, inconsistent,
+#             config, target). The Diagnose workflow re-plans, so an apply-time error is otherwise lost.
 # TF_QUIET_OK_CODES lists exit codes that count as success (default "0"; plan -detailed-exitcode uses "0 2").
 set -euo pipefail
 mode=${1:-}
@@ -29,7 +30,21 @@ if [[ " ${TF_QUIET_OK_CODES:-0} " != *" $rc "* ]]; then
     # Codes: quoted Code="X", "ERROR CODE: X" (azurerm text) or one of a fixed list of well-known bare words.
     codes=$(pick '([Cc]ode[=:] ?"[A-Za-z][A-Za-z0-9]{1,60}"|ERROR CODE: ?[A-Za-z][A-Za-z0-9]{1,60}|\b(Forbidden|AuthorizationFailed|KeyVaultReferenceError|ContainerAppSecretKeyVaultUrlInvalid|RoleAssignmentExists|PrincipalNotFound|ResourceNotFound|Conflict)\b)' 's/.*[^A-Za-z0-9]([A-Za-z0-9]+)"?$/\1/')
     status=$(pick '(StatusCode[=:] ?|RESPONSE |unexpected status )[1-5][0-9]{2}' 's/.*([1-5][0-9]{2})$/\1/')
-    echo "::error::withheld error summary: types=[${types}] codes=[${codes}] status=[${status}]" >&2
+    # Kinds: fixed categories for errors that carry no Azure code (network, lock, Terraform configuration errors).
+    # Only the category name is printed, never the matched text.
+    kinds=$(
+      while IFS='|' read -r kind pattern; do if grep -qiE "$pattern" "$err"; then echo "$kind"; fi; done <<'EOF' | sort -u | paste -sd ' ' -
+timeout|context deadline exceeded|i/o timeout|Client\.Timeout|TLS handshake timeout
+connection|connection reset|connection refused|broken pipe|unexpected EOF|no such host
+state-lock|Error acquiring the state lock|state blob is already locked
+throttled|TooManyRequests|429 Too Many Requests
+token|could not acquire access token|AADSTS[0-9]+|OIDC|getting authenticated object ID
+inconsistent|Provider produced inconsistent|produced an unexpected new value
+config|Unsupported argument|Unsupported attribute|Invalid reference|Missing required argument|Invalid value for|Reference to undeclared|Invalid for_each argument|Invalid count argument
+target|Invalid target address|Resource targeting
+EOF
+    )
+    echo "::error::withheld error summary: types=[${types}] codes=[${codes}] status=[${status}] kinds=[${kinds}]" >&2
   fi
 fi
 exit "$rc"
