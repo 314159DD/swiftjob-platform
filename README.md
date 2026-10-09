@@ -31,6 +31,8 @@ main branch of the private configuration repository)
 | `swiftjob-policy-test` | `policy-test`, `main` only | Validates test templates in the platform resource group, with write on exactly the tested resource types |
 | `swiftjob-tf-staging` | `staging`, `nettest`, `main` only | Applies the staging workload layer: Contributor on the staging and network test resource groups, write on its own state container only, Log Analytics Contributor on the central workspace, and role assignments limited by an ABAC condition to a short list of data roles for service principals ([ADR 5](docs/adr/0005-staging-workload-identity.md)) |
 
+| `swiftjob-tf-prod` | `production`, required reviewer, `main` only | Applies the production workload layer: the same rights as `tf-staging`, but on the production resource group and the `prod` state container only ([ADR 12](docs/adr/0012-production-environment.md)). Created by the extended bootstrap; see [docs/prod-bootstrap.md](docs/prod-bootstrap.md) |
+
 ### Policies
 
 22 assignments in total, all enforced or audit-only by design ([ADR 3](docs/adr/0003-policy-rollout-do-not-enforce-first.md)).
@@ -71,6 +73,12 @@ The staging workload layer (`environments/staging`, built from `modules/workload
 8. A weekly `Rights test` proves that `tf-plan` cannot write state and that `tf-staging` cannot touch production or
    grant itself more or grant a data role to a user. The user check needs the repository variable
    `RIGHTS_TEST_USER_ID` (object ID of a user account, set with `gh variable set`); without it the test fails.
+
+Production (`environments/prod`, `environments/identity-prod`) is applied only by the dispatch-only workflows `Apply prod` and
+`Identity (prod)`, after a required reviewer approves the `production` environment. A merge never changes production
+(`tests/workflow-triggers.test.sh`). The production apply runs a delete guard that refuses any plan that deletes or
+replaces the database, the storage account or the Key Vault, and the CI plan for the layer stays inert until the
+repository variable `PROD_READY` is `true` ([ADR 12](docs/adr/0012-production-environment.md)).
 
 Product configuration (names, settings, schedules, image digests) lives in a private repository. This repository
 holds only the code that consumes it ([ADR 5](docs/adr/0005-staging-workload-identity.md)).

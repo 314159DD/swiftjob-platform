@@ -6,12 +6,13 @@
 #   apply       applies tfplan with the state lock
 #   verify      second plan after an apply, exit 0 = no changes, 2 = changes
 #   summary     per-type summary of tfplan (scripts/plan_summary.py)
+#   guard       fails when tfplan deletes or replaces the PostgreSQL server, storage account or Key Vault (scripts/prod-guard.py)
 #   migrate-plan   plan for the db-migrate job only (-target), with the state lock, writes tfplan-db
 #   migrate-check  exit 0 only if the db-migrate job address is in tfplan-db (or in the state). A -target that matches nothing
 #                  plans "No changes" and exits 0, so without this check a wrong address would silently run the OLD image.
 #   migrate-apply  applies tfplan-db. scripts/db-migrate.sh uses both so the job runs the new image before the app update.
 #                  A plan written before this apply is stale afterwards: plan again (apply-plan) before the full apply.
-# Usage: bash scripts/tf-layer.sh <command> <platform|staging|nettest|identity-staging>
+# Usage: bash scripts/tf-layer.sh <command> <platform|staging|prod|nettest|identity-staging|identity-prod>
 set -euo pipefail
 cmd=${1:?command}
 layer=${2:?layer}
@@ -29,6 +30,24 @@ case "$layer" in
     fi
     vars+=("-var-file=$cfg/terraform.tfvars")
     if [[ -f "$cfg/images.auto.tfvars.json" ]]; then vars+=("-var-file=$cfg/images.auto.tfvars.json"); fi
+    ;;
+  prod)
+    # Same module as staging, own state key in the prod container, own pipeline identity (swiftjob-tf-prod, ADR 12).
+    dir="$root/environments/prod"; mode=suppress
+    cfg="${CONFIG_DIR:-$root/config}/prod"
+    if [[ ! -f "$cfg/terraform.tfvars" ]]; then
+      echo "::error::private configuration for ${layer} not found"; exit 2
+    fi
+    vars+=("-var-file=$cfg/terraform.tfvars")
+    if [[ -f "$cfg/images.auto.tfvars.json" ]]; then vars+=("-var-file=$cfg/images.auto.tfvars.json"); fi
+    ;;
+  identity-prod)
+    dir="$root/environments/identity-prod"; mode=suppress
+    cfg="${CONFIG_DIR:-$root/config}/prod"
+    if [[ ! -f "$cfg/identity.auto.tfvars" ]]; then
+      echo "::error::private configuration for ${layer} not found"; exit 2
+    fi
+    vars+=("-var-file=$cfg/identity.auto.tfvars")
     ;;
   identity-staging)
     # Customer identity (external tenant) registrations. Only ids and URLs come from the private configuration.
@@ -73,5 +92,7 @@ sys.exit(0 if any(r.get("address") == t for r in rc) else 1)' 2> /dev/null; then
   migrate-apply) q apply -input=false -lock-timeout=5m tfplan-db ;;
   verify)     TF_QUIET_OK_CODES="0 2" q plan -input=false -lock-timeout=5m -detailed-exitcode "${vars[@]}" ;;
   summary)    terraform -chdir="$dir" show -json tfplan 2> /dev/null | python3 "$root/scripts/plan_summary.py" ;;
+  # Delete guard (prod layer, ADR 12): fails when tfplan deletes or replaces the database, storage account or Key Vault.
+  guard)      terraform -chdir="$dir" show -json tfplan 2> /dev/null | python3 "$root/scripts/prod-guard.py" ;;
   *) echo "::error::unknown command ${cmd}"; exit 2 ;;
 esac

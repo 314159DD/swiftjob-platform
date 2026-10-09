@@ -29,5 +29,7 @@ FAKE_EXISTS=false FAKE_COUNT=fail FAKE_RG_EXISTS=false run "no state, group abse
 FAKE_EXISTS=false FAKE_COUNT=fail FAKE_RG_EXISTS=true run "no state, list fails" 1 "could not list"
 FAKE_EXISTS=fail FAKE_COUNT=0 run "blob check fails" 1 "state check for staging failed"
 FAKE_EXISTS=maybe FAKE_COUNT=0 run "unexpected blob answer" 1 "unexpected answer"
+FAKE_EXISTS=false FAKE_COUNT=4 run "prod: no state, resources present fails" 1 "state for prod is missing" prod
+FAKE_EXISTS=false FAKE_COUNT=0 run "prod: no state, empty group skips" 3 "rg-swiftjob-prod is empty" prod
 FAKE_EXISTS=true FAKE_COUNT=0 run "unknown layer" 1 "no resource group known" other
 exit $fail

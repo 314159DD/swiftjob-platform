@@ -8,6 +8,7 @@ layer="${1:?usage: state-check.sh <layer>}"
 : "${TF_STATE_SA:?TF_STATE_SA is not set}"
 case "$layer" in
   staging) rg="rg-swiftjob-staging" ;;
+  prod) rg="rg-swiftjob-prod" ;;
   *) echo "::error::state-check.sh: no resource group known for layer ${layer}" >&2; exit 1 ;;
 esac
 exists=$(az storage blob exists --account-name "$TF_STATE_SA" -c "$layer" -n "$layer.tfstate" --auth-mode login --query exists -o tsv | tr -d '\r') || {

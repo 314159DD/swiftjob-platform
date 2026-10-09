@@ -31,7 +31,7 @@ jobs:
       - run: terraform fmt -check -recursive
       - name: Validate every root and test the module
         run: |
-          for d in platform environments/staging environments/identity-staging; do
+          for d in platform environments/staging environments/identity-staging environments/prod environments/identity-prod; do
             terraform -chdir="$d" init -backend=false -input=false > /dev/null
             terraform -chdir="$d" validate
           done
@@ -44,7 +44,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
-          for d in platform environments/staging environments/identity-staging modules/workload modules/external-identity; do
+          for d in platform environments/staging environments/identity-staging environments/prod environments/identity-prod modules/workload modules/external-identity; do
             tflint --chdir="$d" --config="$GITHUB_WORKSPACE/.tflint.hcl" --format compact
           done
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        layer: [platform, staging]
+        layer: [platform, staging, prod]
     permissions:
       contents: read
       id-token: write       # OIDC token, no secret involved
@@ -110,11 +110,20 @@ jobs:
         env:
           LAYER: ${{ matrix.layer }}
           ACTOR: ${{ github.actor }}
+          PROD_READY: ${{ vars.PROD_READY }}
         run: |
-          # The staging leg loads the private configuration, so it does not run for Dependabot pull requests (ADR 5).
-          if [[ "$LAYER" == staging && "$ACTOR" == "dependabot[bot]" ]]; then
+          # The staging and prod legs load the private configuration, so they do not run for Dependabot pull requests (ADR 5).
+          if [[ ( "$LAYER" == staging || "$LAYER" == prod ) && "$ACTOR" == "dependabot[bot]" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Staging plan skipped for a Dependabot pull request (it would run the bumped dependency with the private configuration). Run it after merge or on a maintainer branch." >> "$GITHUB_STEP_SUMMARY"
+            echo "${LAYER} plan skipped for a Dependabot pull request (it would run the bumped dependency with the private configuration). Run it after merge or on a maintainer branch." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # The prod leg is inert until the owner has run the extended bootstrap and the first production apply: no
+          # identity, no state container content and no private prod/ folder exist before that. The repository
+          # variable PROD_READY is set to "true" by the owner at that point (docs/prod-bootstrap.md).
+          if [[ "$LAYER" == prod && "$PROD_READY" != "true" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Plan (prod) skipped: repository variable PROD_READY is not true (production is not bootstrapped yet)."
+            echo "Prod plan skipped: PROD_READY is not true, production is not bootstrapped yet (docs/prod-bootstrap.md)." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Private configuration
         if: matrix.layer != 'platform' && steps.gate.outputs.skip != 'true'
