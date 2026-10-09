@@ -20,8 +20,11 @@ case "$*" in
   "postgres flexible-server microsoft-entra-admin list"*)
     if [[ "${AZ_ADMIN:-ok}" == none ]]; then echo None; else printf '11111111-2222-3333-4444-555555555555\tadmin-secret-principal\r\n'; fi ;;
   "postgres flexible-server microsoft-entra-admin create"*) exit 0 ;;
-  "postgres flexible-server firewall-rule create"*) exit 0 ;;
-  "postgres flexible-server firewall-rule delete"*) exit 0 ;;
+  # Real CLI (2.90): -s/--server-name is the server, -n/--name the rule; there is no --rule-name.
+  "postgres flexible-server firewall-rule "*"--rule-name"*) echo "ERROR: unrecognized arguments: --rule-name" >&2; exit 2 ;;
+  "postgres flexible-server firewall-rule create"*" -s "*" -n drill-"*) exit 0 ;;
+  "postgres flexible-server firewall-rule delete"*" -s "*" -n drill-"*) exit 0 ;;
+  "postgres flexible-server firewall-rule "*) echo "ERROR: the following arguments are required: --server-name/-s" >&2; exit 2 ;;
   "postgres flexible-server show"*"-drill-"*)
     if [[ ! -e "$tmpsrv" ]]; then echo "ERROR: (ResourceNotFound) The Resource 'Microsoft.DBforPostgreSQL/flexibleServers/x' was not found." >&2; exit 3; fi
     case "$*" in *"--query state"*) echo Ready ;; *fullyQualifiedDomainName*) echo host-secret.postgres.database.azure.com ;; *) echo name ;; esac ;;
@@ -74,8 +77,8 @@ check "$(n 'flexible-server restore .*--source-server psql-swiftjob-staging-src1
 check "$(n 'postgres flexible-server delete -g rg-swiftjob-staging -n psql-swiftjob-staging-drill-' "$AZ_LOG")" 1 "success: the temporary server is deleted"
 check "$(exists)" gone "success: nothing is left"
 check "$(n 'microsoft-entra-admin create .*-s psql-swiftjob-staging-drill-' "$AZ_LOG")" 1 "success: the administrator is added to the temporary server"
-check "$(n 'firewall-rule create .*-n psql-swiftjob-staging-drill-' "$AZ_LOG")" 1 "success: the firewall rule goes on the temporary server"
-check "$(n 'firewall-rule create .*-n psql-swiftjob-staging-src' "$AZ_LOG")" 0 "success: the source firewall is untouched"
+check "$(n 'firewall-rule create .*-s psql-swiftjob-staging-drill-' "$AZ_LOG")" 1 "success: the firewall rule goes on the temporary server"
+check "$(n 'firewall-rule create .*-s psql-swiftjob-staging-src' "$AZ_LOG")" 0 "success: the source firewall is untouched"
 check "$(has 'jobs = 1500')" 1 "success: counts are printed"
 check "$(has 'Restore until Ready')" 1 "success: the restore time is printed"
 check "$(leaks)" 0 "success: no token, address, host or principal in the output"
@@ -145,7 +148,7 @@ check "$rc" 64 "no expected migration: usage error"
 check "$(n 'flexible-server' "$AZ_LOG")" 0 "no expected migration: az not called"
 ARGS="staging" run DRILL_COMPARE_SOURCE=1
 check "$rc" 0 "expected version read from the source"
-check "$(n 'firewall-rule create .*-n psql-swiftjob-staging-src123' "$AZ_LOG")" 1 "compare: a rule is opened on the source"
+check "$(n 'firewall-rule create .*-s psql-swiftjob-staging-src123' "$AZ_LOG")" 1 "compare: a rule is opened on the source"
 check "$(n 'firewall-rule delete .*-s psql-swiftjob-staging-src123' "$AZ_LOG")" 1 "compare: and removed again"
 ARGS="dev --expected-migration x" run
 check "$rc" 64 "unknown environment is refused"

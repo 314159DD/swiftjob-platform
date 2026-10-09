@@ -88,7 +88,7 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
   if (( src_rule_open == 1 )); then
-    az postgres flexible-server firewall-rule delete -g "$rg" -s "$src" --rule-name "$rule" --yes -o none > /dev/null 2> "$err" \
+    az postgres flexible-server firewall-rule delete -g "$rg" -s "$src" -n "$rule" --yes -o none > /dev/null 2> "$err" \
       || echo "::warning::could not remove the temporary firewall rule from the source server; remove it by hand ($(code))"
   fi
   if (( keep == 1 )); then
@@ -179,7 +179,7 @@ rolepre=""
 
 # ---- expected migration from the source (optional) -------------------------------------------------------------
 if [[ -z "$expected" ]]; then
-  az postgres flexible-server firewall-rule create -g "$rg" -n "$src" --rule-name "$rule" --start-ip-address "$my_ip" --end-ip-address "$my_ip" -o none > /dev/null 2> "$err" \
+  az postgres flexible-server firewall-rule create -g "$rg" -s "$src" -n "$rule" --start-ip-address "$my_ip" --end-ip-address "$my_ip" -o none > /dev/null 2> "$err" \
     || { echo "::error::could not open the temporary firewall rule on the source ($(code))"; exit 1; }
   src_rule_open=1
   src_host=$(az postgres flexible-server show -g "$rg" -n "$src" --query fullyQualifiedDomainName -o tsv 2> /dev/null | tr -d '\r') || src_host=""
@@ -193,7 +193,7 @@ if [[ -z "$expected" ]]; then
     expected=""; sleep "$retry_s"
   done
   [[ -n "$expected" ]] || { echo "::error::could not read the expected migration version from the source; pass --expected-migration"; exit 1; }
-  az postgres flexible-server firewall-rule delete -g "$rg" -s "$src" --rule-name "$rule" --yes -o none > /dev/null 2> "$err" \
+  az postgres flexible-server firewall-rule delete -g "$rg" -s "$src" -n "$rule" --yes -o none > /dev/null 2> "$err" \
     && src_rule_open=0
   say "Expected migration read from the source: ${expected}"
 else
@@ -225,7 +225,7 @@ host=$(az postgres flexible-server show -g "$rg" -n "$tmp_name" --query fullyQua
 [[ -n "$host" ]] || { echo "::error::could not read the address of the temporary server"; exit 1; }
 az postgres flexible-server microsoft-entra-admin create -g "$rg" -s "$tmp_name" -u "$pg_user" -i "$admin_oid" -t User -o none > /dev/null 2> "$err" \
   || { echo "::error::could not add the break-glass administrator to the temporary server ($(code))"; exit 1; }
-az postgres flexible-server firewall-rule create -g "$rg" -n "$tmp_name" --rule-name "$rule" --start-ip-address "$my_ip" --end-ip-address "$my_ip" -o none > /dev/null 2> "$err" \
+az postgres flexible-server firewall-rule create -g "$rg" -s "$tmp_name" -n "$rule" --start-ip-address "$my_ip" --end-ip-address "$my_ip" -o none > /dev/null 2> "$err" \
   || { echo "::error::could not open the firewall rule on the temporary server ($(code))"; exit 1; }
 
 # ---- 5. read-only checks ---------------------------------------------------------------------------------------
