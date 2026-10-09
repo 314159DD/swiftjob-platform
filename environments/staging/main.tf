@@ -23,4 +23,5 @@ module "workload" {
   jobs                       = var.jobs
   alerts                     = var.alerts
   postgres                   = var.postgres
+  github_federations         = var.github_federations
 }
