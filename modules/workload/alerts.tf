@@ -71,7 +71,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_failed" {
   location             = var.location
   resource_group_name  = data.azurerm_resource_group.this.name
   scopes               = [var.log_analytics_workspace_id]
-  description          = "A job reported status=failed."
+  description          = "A job reported a JOB_RESULT status other than ok."
   severity             = 2
   evaluation_frequency = "PT15M"
   window_duration      = "PT15M"
@@ -79,7 +79,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_failed" {
     query                   = <<-KQL
       ContainerAppConsoleLogs
       | where _ResourceId contains "${local.rg_match}"
-      | where Log matches regex @"JOB_RESULT job=\S+ status=failed "
+      | where Log matches regex @"JOB_RESULT job=\S+ status=\S+ "
+      | where Log !contains " status=ok "
     KQL
     time_aggregation_method = "Count"
     threshold               = 0
