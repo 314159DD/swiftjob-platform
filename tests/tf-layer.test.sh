@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 script="$root/scripts/tf-layer.sh"
 export PATH="$root/tests/fake-bin:$PATH"
-export TF_STATE_RG=rg-state TF_STATE_SA=sastate
+export TF_STATE_RG=rg-state TF_STATE_SA=sastate TF_LAYER_RETRY_S=0
 fail=0
 check() { if [[ "$1" == "$2" ]]; then echo "ok   $3"; else echo "FAIL $3 (expected '$2', got '$1')"; fail=1; fi; }
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -75,6 +75,21 @@ check "$(grep -c -- "-var-file=$tmp/config/staging/terraform.tfvars" "$FAKE_TF_L
 check "$(grep -c -- 'apply .* tfplan-db' "$FAKE_TF_LOG")" 1 "migrate-apply applies tfplan-db"
 rc=0; out=$(FAKE_TF_EXIT=1 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging 2>&1) || rc=$?
 check "$(grep -c 'bad value' <<< "$out" || true)" 0 "migrate-plan stays in suppress mode"
+check "$rc" 1 "migrate-plan fails when both attempts fail"
+
+# migrate-plan retries once: a transient failure of the first attempt does not stop the deploy
+: > "$FAKE_TF_LOG"; rc=0; out=$(FAKE_TF_FAIL_ONCE="$tmp/failed-once" FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging 2>&1) || rc=$?
+check "$rc" 0 "migrate-plan succeeds on the retry"
+check "$(grep -c -- '-out=tfplan-db' "$FAKE_TF_LOG")" 2 "migrate-plan ran twice"
+check "$(grep -c 'retrying once' <<< "$out" || true)" 1 "the retry is announced"
+: > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging > /dev/null 2>&1
+check "$(grep -c -- '-out=tfplan-db' "$FAKE_TF_LOG")" 1 "no retry after a first success"
+
+# migrate-plan-ro: the same target and plan file, lock-free for the read-only CI identity
+: > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan-ro staging > /dev/null 2>&1
+check "$(grep -c -- '-target=module.workload.azurerm_container_app_job.this\["db-migrate"\]' "$FAKE_TF_LOG")" 1 "migrate-plan-ro targets the db-migrate job"
+check "$(grep -c -- '-lock=false' "$FAKE_TF_LOG")" 1 "migrate-plan-ro is lock-free"
+check "$(grep -c -- '-lock-timeout' "$FAKE_TF_LOG" || true)" 0 "migrate-plan-ro takes no lock"
 
 # migrate-check: the address must be in the targeted plan or in the state, otherwise the run fails
 mkdir "$tmp/tfbin"

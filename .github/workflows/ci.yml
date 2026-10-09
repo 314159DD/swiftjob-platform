@@ -172,6 +172,15 @@ jobs:
           if [[ "$rc" != 0 && "$rc" != 2 ]]; then exit "$rc"; fi
           bash scripts/tf-layer.sh summary "${{ matrix.layer }}" > summary.md || echo "Plan summary unavailable." > summary.md
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      # The apply runs a targeted plan of the migration job before the full apply (scripts/db-migrate.sh). Plan it here
+      # too, so a change that breaks only the targeted path cannot merge green.
+      - name: Targeted migrate plan
+        if: steps.gate.outputs.skip != 'true' && steps.state.outputs.missing != 'true' && (matrix.layer == 'staging' || matrix.layer == 'prod')
+        run: |
+          bash scripts/tf-layer.sh migrate-plan-ro "${{ matrix.layer }}"
+          # Staging has the job, so the target must resolve. Prod has none while its apps are not enabled yet.
+          if [[ "${{ matrix.layer }}" == staging ]]; then bash scripts/tf-layer.sh migrate-check staging; fi
+          echo "Targeted migrate plan: ok" >> "$GITHUB_STEP_SUMMARY"
       - name: Comment
         if: steps.gate.outputs.skip != 'true' && steps.state.outputs.missing != 'true'
         env:
