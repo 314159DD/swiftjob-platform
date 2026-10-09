@@ -378,3 +378,70 @@ run "purge_protection_is_off_by_default" {
     error_message = "staging and throwaway environments keep purge protection off"
   }
 }
+
+run "application_alerts_with_defaults" {
+  command = apply
+  assert {
+    condition     = length(azurerm_monitor_scheduled_query_rules_alert_v2.llm_primary_failures) == 1 && length(azurerm_monitor_scheduled_query_rules_alert_v2.llm_auth_or_credit) == 1 && length(azurerm_monitor_scheduled_query_rules_alert_v2.first_scan_bad) == 1 && length(azurerm_monitor_scheduled_query_rules_alert_v2.ranking_timeout) == 1
+    error_message = "one rule each for LLM failures, LLM auth or credit, bad first scans and ranking timeouts"
+  }
+  assert {
+    condition     = length(azurerm_monitor_scheduled_query_rules_alert_v2.route_p95) == 1 && length(azurerm_monitor_scheduled_query_rules_alert_v2.route_5xx) == 1
+    error_message = "route latency and error rules exist when an API app is watched"
+  }
+  assert {
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.llm_primary_failures[0].criteria[0].threshold == 5 && azurerm_monitor_scheduled_query_rules_alert_v2.llm_primary_failures[0].criteria[0].dimension[0].name == "model"
+    error_message = "primary model failures: default 5 per hour, split by model"
+  }
+  assert {
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.llm_auth_or_credit[0].evaluation_frequency == "PT5M" && azurerm_monitor_scheduled_query_rules_alert_v2.llm_auth_or_credit[0].severity == 1
+    error_message = "401 and 402 are critical and evaluated every 5 minutes"
+  }
+  assert {
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.first_scan_bad[0].criteria[0].threshold == 1 && strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.first_scan_bad[0].criteria[0].query, "trigger=onboarding")
+    error_message = "first-scan rule reads SCAN_TIMING of onboarding runs"
+  }
+  assert {
+    condition     = alltrue([for r in concat(azurerm_monitor_scheduled_query_rules_alert_v2.llm_primary_failures, azurerm_monitor_scheduled_query_rules_alert_v2.first_scan_bad, azurerm_monitor_scheduled_query_rules_alert_v2.ranking_timeout, azurerm_monitor_scheduled_query_rules_alert_v2.route_p95, azurerm_monitor_scheduled_query_rules_alert_v2.route_5xx) : r.auto_mitigation_enabled && r.evaluation_frequency == "PT15M"])
+    error_message = "quiet rules: 15-minute evaluation with auto-mitigation"
+  }
+  assert {
+    condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.route_p95[0].criteria[0].query, "p95 > case(route == \"scan_events\", 3000, route == \"titles_suggest\", 1500, 10000)")
+    error_message = "route p95 limits are wired into the query"
+  }
+  assert {
+    condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.job_failed[0].criteria[0].query, "!contains \" status=ok \"")
+    error_message = "job alert fires for every status other than ok"
+  }
+}
+
+run "application_alerts_thresholds_and_switch" {
+  command = apply
+  variables {
+    alerts = {
+      api_app               = "api"
+      llm_failures_per_hour = 9
+      route_5xx_threshold   = 4
+      route_p95_ms          = { scan_events = 1234 }
+    }
+  }
+  assert {
+    condition     = azurerm_monitor_scheduled_query_rules_alert_v2.llm_primary_failures[0].criteria[0].threshold == 9 && azurerm_monitor_scheduled_query_rules_alert_v2.route_5xx[0].criteria[0].threshold == 4
+    error_message = "per-environment thresholds are wired through"
+  }
+  assert {
+    condition     = strcontains(azurerm_monitor_scheduled_query_rules_alert_v2.route_p95[0].criteria[0].query, "route == \"scan_events\", 1234")
+    error_message = "route limit override reaches the query"
+  }
+}
+
+run "log_alerts_can_be_switched_off_and_route_alerts_need_an_api_app" {
+  command = apply
+  variables {
+    alerts = { log_alerts = false }
+  }
+  assert {
+    condition     = length(azurerm_monitor_scheduled_query_rules_alert_v2.llm_primary_failures) == 0 && length(azurerm_monitor_scheduled_query_rules_alert_v2.first_scan_bad) == 0 && length(azurerm_monitor_scheduled_query_rules_alert_v2.route_p95) == 0
+    error_message = "no application alerts without log_alerts and without a watched API app"
+  }
+}

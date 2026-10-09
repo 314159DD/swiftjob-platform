@@ -128,6 +128,16 @@ variable "alerts" {
     api_app           = optional(string)
     api_5xx_threshold = optional(number, 5)
     api_p95_ms        = optional(number, 3000)
+    # application alerts (modules/workload/app-alerts.tf); thresholds per environment
+    log_alerts                   = optional(bool, true) # LLM, first-scan and ranking alerts read backend log lines
+    llm_failures_per_hour        = optional(number, 5)  # per model, primary calls without fallback
+    first_scan_failures_per_hour = optional(number, 1)  # alert above this many bad first scans per hour
+    route_5xx_threshold          = optional(number, 2)  # 5xx on the key routes in 15 minutes
+    route_p95_ms = optional(object({
+      scan_events    = optional(number, 3000)
+      titles_suggest = optional(number, 1500)
+      onboarding     = optional(number, 10000)
+    }), {})
   })
   default = {}
 }
