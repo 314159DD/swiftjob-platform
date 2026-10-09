@@ -128,8 +128,44 @@ A `CanNotDelete` lock also blocks `terraform destroy` of those resources, which 
 
 ## 7. Apps on, migration first (controller, owner approves)
 
-In the private configuration set `apps_enabled = true` and the production image digests
-(copied from `staging/images.auto.tfvars.json` with `scripts/set-image.py` of the configuration repository; the production web image is built separately because it bakes in public URLs), merge, then:
+Production images are never copied by hand and never built by a push. Two pull requests in the private configuration
+repository fill `prod/images.auto.tfvars.json`; both are gated on the onboarding probe, and merging either deploys
+nothing.
+
+Owner inputs first (names only, values are public URLs):
+
+| Where | Name | Value |
+|---|---|---|
+| `Swiftjob-fe` repository variable | `PROD_API_URL` | `https://api.swiftjob.de` |
+| `Swiftjob-fe` repository variable | `PROD_WEB_URL` | `https://swiftjob.de` |
+| configuration repository, branch protection of `main` | required check `Promote gate` | set after the first promote pull request has run once |
+
+The Entra tenant and client ids are not build arguments: they are runtime settings from `prod/terraform.tfvars`.
+
+1. **Staging is proven.** The staging release is merged and `Apply staging` succeeded. The controller runs the
+   onboarding probe against staging for that commit (`PROBE=1`, `scripts/onboarding-probe.mjs` in `Swiftjob-fe`; it
+   writes a local JSON report only, so the proof is the checkbox below).
+2. **Backend images (api, db, aggregator).** In the configuration repository, with the staging config commit that is on
+   `main` and is what staging runs now:
+
+   ```bash
+   python scripts/promote.py --config-commit <sha> --push --verify-az
+   ```
+
+   `--verify-az` compares the api container app on staging with the digest (needs `az login`; leave it out to rely on
+   main). The script refuses a commit that is not on main, digests staging main no longer holds, `db` different from
+   `api`, and `web`. Pushing `promote/<12 hex>` makes `promote-pr.yml` open the pull request.
+3. **Web image.** Dispatch the production build for the frontend commit staging proved:
+
+   ```bash
+   gh workflow run image-prod.yml -R 314159DD/Swiftjob-fe --ref azure-migration -f commit_sha=<40 hex>
+   ```
+
+   It builds with `PROD_API_URL` and `PROD_WEB_URL`, entra, no Supabase, no legacy link, pushes
+   `swiftjob-web:prod-<sha>` and pushes `promote/web-<12 hex>` to the configuration repository.
+4. **Gate.** In each promote pull request tick `Onboarding probe passed against staging for this commit (<12 hex>)`.
+   The check `Promote gate` fails while it is unticked or names another commit; ticking it runs the check. Merge.
+5. In the private configuration set `apps_enabled = true` (first apply only), merge, then:
 
 ```bash
 gh workflow run apply-prod.yml -R 314159DD/swiftjob-platform -f config_ref=<config commit sha>
@@ -176,6 +212,9 @@ az containerapp hostname list -g rg-swiftjob-prod -n ca-swiftjob-prod-api -o tab
 ```
 
 Rollback is the DNS records put back to their old values (the old stack keeps running untouched).
+
+Every later release repeats steps 1 to 4 and then dispatches `apply-prod.yml` with the merge commit as `config_ref`;
+the migration runs first whenever the `db` digest changed.
 
 ## 9. After the cutover
 
