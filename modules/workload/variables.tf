@@ -141,8 +141,27 @@ variable "apps" {
     health_path  = optional(string)
     env          = optional(map(string), {})
     secret_env   = optional(map(string), {}) # ENV_NAME = Key Vault secret name
+    # Host names bound to the app with an Azure managed certificate. Declared per app, created only when
+    # enable_custom_domains is true (DNS must point at Azure first, see ADR 12).
+    custom_domains = optional(list(string), [])
   }))
   default = {}
+  validation {
+    condition     = alltrue(flatten([for a in values(var.apps) : [for d in a.custom_domains : can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", d))]]))
+    error_message = "custom_domains must be lowercase host names without a scheme, path or wildcard"
+  }
+}
+
+variable "enable_custom_domains" {
+  description = "false: custom domains are declared on the apps but not created. A managed certificate can only be issued after the DNS records point at Azure, so the first apply of an environment runs with false."
+  type        = bool
+  default     = false
+}
+
+variable "key_vault_purge_protection" {
+  description = "Purge protection on the Key Vault. Irreversible on that vault (soft delete 7 days). Staging and throwaway environments keep false so they can be removed."
+  type        = bool
+  default     = false
 }
 
 variable "jobs" {
@@ -190,6 +209,12 @@ variable "alerts" {
   }
 }
 
+variable "postgres_allowed_skus" {
+  description = "SKUs the postgres variable may use. The default keeps staging and throwaway environments on the free-account grant; the production layer adds B_Standard_B2s (ADR 12)."
+  type        = list(string)
+  default     = ["B_Standard_B1ms"]
+}
+
 variable "postgres" {
   description = "PostgreSQL flexible server with Entra ID sign-in only (ADR 9). null: no database in this environment."
   type = object({
@@ -208,8 +233,8 @@ variable "postgres" {
   })
   default = null
   validation {
-    condition     = var.postgres == null || try(var.postgres.sku_name, "") == "B_Standard_B1ms"
-    error_message = "postgres.sku_name is B_Standard_B1ms (ADR 9, free-account grant); a larger SKU needs an ADR"
+    condition     = var.postgres == null || contains(var.postgres_allowed_skus, try(var.postgres.sku_name, ""))
+    error_message = "postgres.sku_name is B_Standard_B1ms (ADR 9, free-account grant) unless the layer allows more through postgres_allowed_skus; a larger SKU needs an ADR"
   }
   validation {
     condition     = var.postgres == null || try(var.postgres.storage_mb, 0) == 32768

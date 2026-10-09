@@ -51,6 +51,20 @@ rm "$tmp/config/staging/identity.auto.tfvars"
 rc=0; CONFIG_DIR="$tmp/config" bash "$script" plan identity-staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "missing identity configuration fails"
 
+# prod: its own directory and config folder, suppress mode; identity-prod likewise
+mkdir -p "$tmp/config/prod"
+echo 'environment = "prod"' > "$tmp/config/prod/terraform.tfvars"
+: > "$FAKE_TF_LOG"; rc=0; out=$(FAKE_TF_EXIT=1 CONFIG_DIR="$tmp/config" bash "$script" plan prod 2>&1) || rc=$?
+check "$(grep -c -- "-chdir=$root/environments/prod " "$FAKE_TF_LOG")" 1 "prod plan runs in environments/prod"
+check "$(grep -c -- "-var-file=$tmp/config/prod/terraform.tfvars" "$FAKE_TF_LOG")" 1 "prod plan uses the prod var file"
+check "$(grep -c -- "config/staging" "$FAKE_TF_LOG" || true)" 0 "prod plan never reads the staging folder"
+check "$(grep -c 'bad value' <<< "$out" || true)" 0 "prod uses suppress mode"
+echo 'web_base_url = "https://x.example.test"' > "$tmp/config/prod/identity.auto.tfvars"
+: > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" plan identity-prod > /dev/null 2>&1 || true
+check "$(grep -c -- "-var-file=$tmp/config/prod/identity.auto.tfvars" "$FAKE_TF_LOG")" 1 "identity-prod uses the prod identity var file"
+rc=0; CONFIG_DIR="$tmp/none" bash "$script" plan prod > /dev/null 2>&1 || rc=$?
+check "$rc" 2 "prod without private configuration fails"
+
 # migrate-first: a targeted plan of the db-migrate job into its own plan file, then an apply of exactly that file
 : > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging > /dev/null 2>&1
 check "$(grep -c -- '-target=module.workload.azurerm_container_app_job.this\["db-migrate"\]' "$FAKE_TF_LOG")" 1 "migrate-plan targets the db-migrate job only"
@@ -86,6 +100,22 @@ check "$rc" 0 "migrate-check passes when the state holds the job"
 rc=0; out=$(CHK_PLAN="$wrong" CHK_STATE='something.else' chk 2>&1) || rc=$?
 check "$rc" 1 "migrate-check fails when the address matches nothing (wrong target)"
 check "$(grep -c 'something.else' <<< "$out" || true)" 0 "migrate-check prints nothing from the state"
+
+# plan-has-migrate-job: only a plan that CREATES the job counts (first apply with apps_enabled)
+mk() { printf '{"resource_changes":[{"address":"module.workload.azurerm_container_app_job.this[\\"db-migrate\\"]","change":{"actions":["%s"]}}]}' "$1"; }
+phj() { PATH="$tmp/tfbin:$PATH" CONFIG_DIR="$tmp/config" bash "$script" plan-has-migrate-job staging; }
+rc=0; CHK_PLAN="$(mk create)" phj > /dev/null 2>&1 || rc=$?
+check "$rc" 0 "plan-has-migrate-job passes when the plan creates the job"
+rc=0; CHK_PLAN="$(mk update)" phj > /dev/null 2>&1 || rc=$?
+check "$rc" 1 "plan-has-migrate-job fails when the job is only updated"
+rc=0; out=$(CHK_PLAN='{"resource_changes":[]}' phj 2>&1) || rc=$?
+check "$rc" 1 "plan-has-migrate-job fails when apps are disabled (no job in the plan)"
+check "$(grep -c 'does not create' <<< "$out")" 1 "plan-has-migrate-job prints a fixed message"
+# guard takes the plan file name
+: > "$FAKE_TF_LOG"; CONFIG_DIR="$tmp/config" bash "$script" guard staging tfplan-db > /dev/null 2>&1 || true
+check "$(grep -c -- 'show -json tfplan-db' "$FAKE_TF_LOG")" 1 "guard can read tfplan-db"
+rc=0; CONFIG_DIR="$tmp/config" bash "$script" guard staging ../x > /dev/null 2>&1 || rc=$?
+check "$rc" 2 "guard refuses another plan file name"
 
 # missing private configuration and unknown layer
 rc=0; CONFIG_DIR="$tmp/none" bash "$script" plan staging > /dev/null 2>&1 || rc=$?

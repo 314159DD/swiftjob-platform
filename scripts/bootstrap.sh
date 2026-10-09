@@ -183,12 +183,15 @@ read -r PLAN_APP PLAN_SP <<< "$(identity swiftjob-tf-plan plan)"
 read -r PLATFORM_APP PLATFORM_SP <<< "$(identity swiftjob-tf-platform platform)"
 read -r PT_APP PT_SP <<< "$(identity swiftjob-policy-test policy-test)"
 read -r STAGING_APP STAGING_SP <<< "$(identity swiftjob-tf-staging staging)"
+# Production pipeline identity (plan 05): bound to the GitHub environment "production" (required reviewer, set by
+# scripts/configure-github.sh). It only ever gets roles on rg-swiftjob-prod and the prod state container.
+read -r PROD_APP PROD_SP <<< "$(identity swiftjob-tf-prod production)"
 federate "$STAGING_APP" github-nettest "repo:${SUBJECT_REPO}:environment:nettest"
 # The private configuration repository has no environments (GitHub Free); its Diagnose workflow uses tf-plan
 # from main only.
 federate "$PLAN_APP" github-config-main "repo:${CONFIG_SUBJECT_REPO}:ref:refs/heads/main"
 
-for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP PT_APP PT_SP STAGING_APP STAGING_SP; do
+for v in PLAN_APP PLAN_SP PLATFORM_APP PLATFORM_SP PT_APP PT_SP STAGING_APP STAGING_SP PROD_APP PROD_SP; do
   if [[ -z "${!v}" ]]; then echo "Identity creation failed: ${v} is empty." >&2; exit 1; fi
 done
 
@@ -295,6 +298,18 @@ APP_CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'
 assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$STAGING_RG_ID" "$APP_CONDITION"
 assign "$STAGING_SP" ServicePrincipal "Role Based Access Control Administrator" "$NETTEST_RG_ID" "$APP_CONDITION"
 
+step "Roles: tf-prod (the production resource group only, its own state container)"
+assign "$PROD_SP" ServicePrincipal Contributor "$PROD_RG_ID"
+assign "$PROD_SP" ServicePrincipal "Storage Blob Data Contributor" "${SA_ID}/blobServices/default/containers/prod"
+# Same accepted residual risk as tf-staging (ADR 5, ADR 12): Log Analytics Contributor on the central workspace.
+assign "$PROD_SP" ServicePrincipal "Log Analytics Contributor" "${SUB_ID}/${WORKSPACE_ID_SUFFIX}"
+# The same app-role list as tf-staging, only to service principals other than itself. The kill switch role is
+# the same definition (assignable at the production resource group too).
+PROD_APP_CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal' AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAllValues:GuidNotEquals {${PROD_SP}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${ALLOWED_APP}} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal'))"
+assign "$PROD_SP" ServicePrincipal "Role Based Access Control Administrator" "$PROD_RG_ID" "$PROD_APP_CONDITION"
+# Resource locks (CanNotDelete) are written by the owner, not by this identity: Contributor cannot write
+# Microsoft.Authorization/locks. See docs/prod-bootstrap.md.
+
 step "Pipeline identities hold no Owner or User Access Administrator anywhere under ${ROOT_MG}"
 # Azure makes the creator of a management group its Owner. Terraform (tf-platform) creates management groups,
 # so Azure assigns it Owner on each new one. Nothing in Terraform tracks those assignments, so drift cannot see
@@ -303,7 +318,7 @@ step "Pipeline identities hold no Owner or User Access Administrator anywhere un
 MG_NAMES=$(az account management-group show --name "$ROOT_MG" --expand --recurse -o json \
   | jq -r '.. | objects | select(.type? == "Microsoft.Management/managementGroups") | .name' | tr -d '\r' | sort -u)
 if ! grep -qx "$ROOT_MG" <<< "$MG_NAMES"; then echo "Management group enumeration did not include ${ROOT_MG}." >&2; exit 1; fi
-for sp in "$PLAN_SP" "$PLATFORM_SP" "$PT_SP" "$STAGING_SP"; do
+for sp in "$PLAN_SP" "$PLATFORM_SP" "$PT_SP" "$STAGING_SP" "$PROD_SP"; do
   ids=$(az role assignment list --all --assignee "$sp" --query "[?roleDefinitionName=='Owner' || roleDefinitionName=='User Access Administrator'].id" -o tsv)
   for mg in $MG_NAMES; do
     mg_ids=$(az role assignment list --assignee "$sp" --scope "/providers/Microsoft.Management/managementGroups/${mg}" \
@@ -326,5 +341,6 @@ AZURE_CLIENT_ID_PLAN=${PLAN_APP}
 AZURE_CLIENT_ID_PLATFORM=${PLATFORM_APP}
 AZURE_CLIENT_ID_POLICY_TEST=${PT_APP}
 AZURE_CLIENT_ID_STAGING=${STAGING_APP}
-PIPELINE_PRINCIPAL_IDS=${PLAN_SP} ${PLATFORM_SP} ${PT_SP} ${STAGING_SP}
+AZURE_CLIENT_ID_PROD=${PROD_APP}
+PIPELINE_PRINCIPAL_IDS=${PLAN_SP} ${PLATFORM_SP} ${PT_SP} ${STAGING_SP} ${PROD_SP}
 EOF

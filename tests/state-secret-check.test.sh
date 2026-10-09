@@ -26,6 +26,8 @@ run "$tmp/dirty.json"
 check "$rc" 1 "an inline value fails"
 check "$(grep -c 'CANARY-VALUE' <<< "$out" || true)" 0 "the value is never printed"
 
+rc=0; out=$(FAKE_STATE="$tmp/dirty.json" bash "$root/scripts/state-secret-check.sh" prod 2>&1) || rc=$?
+check "$rc" 1 "the prod layer is checked too"
 rc=0; out=$(FAKE_TF_EXIT=1 FAKE_STATE="$tmp/clean.json" bash "$root/scripts/state-secret-check.sh" staging 2>&1) || rc=$?
 check "$rc" 1 "an unreadable state fails"
 echo '{}' > "$tmp/empty.json"

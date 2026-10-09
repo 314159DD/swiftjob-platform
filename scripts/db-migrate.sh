@@ -25,7 +25,8 @@
 # Output: fixed messages only. az errors are never printed (they quote resource IDs and principal IDs); only an Azure
 # error code from a short allowlist is. The digest, the execution name and resource IDs are never printed.
 # Without the job (first deploy of an environment) the full mode defers: it writes deferred=true to GITHUB_OUTPUT and
-# the workflow calls run-only after the apply that creates the job.
+# the workflow calls run-only after the apply, but only if the full plan creates the job (tf-layer.sh plan-has-migrate-job;
+# with apps_enabled=false it does not, and the migration waits for the apply that enables the apps).
 # Env: DB_MIGRATE_TIMEOUT_S (default 1200, the job's replica_timeout is 900 and image pull and start count against it), DB_MIGRATE_POLL_S (default 10), DB_MIGRATE_RG, TF_LAYER (test hook).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -67,6 +68,8 @@ if [[ "$mode" == full ]]; then
   bash "$tf_layer" migrate-plan "$env_name"
   # A -target that matches nothing plans "No changes" and exits 0: the job would then run the OLD image.
   bash "$tf_layer" migrate-check "$env_name" || die "the targeted plan does not contain the migration job"
+  # Production: the targeted plan must not delete or replace a guarded resource (the job's dependencies are in it).
+  if [[ "$env_name" == prod ]]; then bash "$tf_layer" guard "$env_name" tfplan-db || die "the delete guard refused the targeted plan"; fi
   bash "$tf_layer" migrate-apply "$env_name"
 fi
 

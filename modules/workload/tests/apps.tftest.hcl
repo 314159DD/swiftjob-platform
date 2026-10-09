@@ -307,3 +307,74 @@ run "image_key_without_digest_is_refused" {
   }
   expect_failures = [azurerm_container_app.this]
 }
+
+run "custom_domains_are_declared_but_not_created_by_default" {
+  command = apply
+  variables {
+    apps = {
+      web = { identity = "web", image = "web", port = 3000, cpu = 0.25, memory = "0.5Gi", custom_domains = ["example.test", "www.example.test"] }
+    }
+    jobs   = {}
+    alerts = {}
+  }
+  assert {
+    condition     = length(azurerm_container_app_custom_domain.this) == 0
+    error_message = "no custom domain may be created while enable_custom_domains is false"
+  }
+  assert {
+    condition     = join(",", output.custom_domains.web) == "example.test,www.example.test"
+    error_message = "declared domains are reported"
+  }
+}
+
+run "custom_domains_bind_a_managed_certificate_when_enabled" {
+  command = apply
+  variables {
+    enable_custom_domains = true
+    apps = {
+      web = { identity = "web", image = "web", port = 3000, cpu = 0.25, memory = "0.5Gi", custom_domains = ["example.test", "www.example.test"] }
+      api = { identity = "api", image = "api", port = 8080, cpu = 0.5, memory = "1Gi" }
+    }
+    jobs   = {}
+    alerts = {}
+  }
+  assert {
+    condition     = length(azurerm_container_app_custom_domain.this) == 2
+    error_message = "one custom domain resource per declared host name, none for an app without the list"
+  }
+  assert {
+    condition     = alltrue([for d in azurerm_container_app_custom_domain.this : d.container_app_environment_certificate_id == null])
+    error_message = "no uploaded certificate: Azure issues a managed certificate"
+  }
+}
+
+run "custom_domain_names_are_validated" {
+  command = plan
+  variables {
+    apps = {
+      web = { identity = "web", image = "web", port = 3000, cpu = 0.25, memory = "0.5Gi", custom_domains = ["https://example.test"] }
+    }
+    jobs   = {}
+    alerts = {}
+  }
+  expect_failures = [var.apps]
+}
+
+run "purge_protection_follows_the_variable" {
+  command = apply
+  variables {
+    key_vault_purge_protection = true
+  }
+  assert {
+    condition     = azurerm_key_vault.this.purge_protection_enabled == true
+    error_message = "purge protection must be on when requested"
+  }
+}
+
+run "purge_protection_is_off_by_default" {
+  command = apply
+  assert {
+    condition     = azurerm_key_vault.this.purge_protection_enabled == false
+    error_message = "staging and throwaway environments keep purge protection off"
+  }
+}
