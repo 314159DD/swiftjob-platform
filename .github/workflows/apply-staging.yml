@@ -114,11 +114,23 @@ jobs:
         run: |
           bash scripts/tf-layer.sh apply-plan staging
           bash scripts/tf-layer.sh summary staging >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+      # First deploy of an environment: the job does not exist yet. It is migrated after the apply, but only when this
+      # plan creates it (not so while apps_enabled is false: then the migration waits for the apply that enables the apps).
+      - name: Will this apply create the migration job
+        id: jobplan
+        if: steps.migrate.outputs.deferred == 'true'
+        run: |
+          if bash scripts/tf-layer.sh plan-has-migrate-job staging; then
+            echo "creates=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "creates=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::The migration job is not created by this apply (apps are not enabled yet): no migration ran."
+          fi
       - name: Apply
         run: bash scripts/tf-layer.sh apply staging
       # Only on the first deploy of an environment: the apply created the job, so the migration runs now.
       - name: Migrate the database (job created by this apply)
-        if: steps.migrate.outputs.deferred == 'true'
+        if: steps.jobplan.outputs.creates == 'true'
         run: bash scripts/db-migrate.sh staging run-only
       - name: Verify idempotency
         run: |

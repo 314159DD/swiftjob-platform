@@ -101,6 +101,22 @@ rc=0; out=$(CHK_PLAN="$wrong" CHK_STATE='something.else' chk 2>&1) || rc=$?
 check "$rc" 1 "migrate-check fails when the address matches nothing (wrong target)"
 check "$(grep -c 'something.else' <<< "$out" || true)" 0 "migrate-check prints nothing from the state"
 
+# plan-has-migrate-job: only a plan that CREATES the job counts (first apply with apps_enabled)
+mk() { printf '{"resource_changes":[{"address":"module.workload.azurerm_container_app_job.this[\\"db-migrate\\"]","change":{"actions":["%s"]}}]}' "$1"; }
+phj() { PATH="$tmp/tfbin:$PATH" CONFIG_DIR="$tmp/config" bash "$script" plan-has-migrate-job staging; }
+rc=0; CHK_PLAN="$(mk create)" phj > /dev/null 2>&1 || rc=$?
+check "$rc" 0 "plan-has-migrate-job passes when the plan creates the job"
+rc=0; CHK_PLAN="$(mk update)" phj > /dev/null 2>&1 || rc=$?
+check "$rc" 1 "plan-has-migrate-job fails when the job is only updated"
+rc=0; out=$(CHK_PLAN='{"resource_changes":[]}' phj 2>&1) || rc=$?
+check "$rc" 1 "plan-has-migrate-job fails when apps are disabled (no job in the plan)"
+check "$(grep -c 'does not create' <<< "$out")" 1 "plan-has-migrate-job prints a fixed message"
+# guard takes the plan file name
+: > "$FAKE_TF_LOG"; CONFIG_DIR="$tmp/config" bash "$script" guard staging tfplan-db > /dev/null 2>&1 || true
+check "$(grep -c -- 'show -json tfplan-db' "$FAKE_TF_LOG")" 1 "guard can read tfplan-db"
+rc=0; CONFIG_DIR="$tmp/config" bash "$script" guard staging ../x > /dev/null 2>&1 || rc=$?
+check "$rc" 2 "guard refuses another plan file name"
+
 # missing private configuration and unknown layer
 rc=0; CONFIG_DIR="$tmp/none" bash "$script" plan staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "missing private configuration fails"

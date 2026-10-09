@@ -30,4 +30,5 @@ module "workload" {
   jobs                       = var.jobs
   alerts                     = var.alerts
   postgres                   = var.postgres
+  postgres_allowed_skus      = ["B_Standard_B1ms", "B_Standard_B2s"] # ADR 12: B2s once CPU alerts fire
 }

@@ -209,6 +209,12 @@ variable "alerts" {
   }
 }
 
+variable "postgres_allowed_skus" {
+  description = "SKUs the postgres variable may use. The default keeps staging and throwaway environments on the free-account grant; the production layer adds B_Standard_B2s (ADR 12)."
+  type        = list(string)
+  default     = ["B_Standard_B1ms"]
+}
+
 variable "postgres" {
   description = "PostgreSQL flexible server with Entra ID sign-in only (ADR 9). null: no database in this environment."
   type = object({
@@ -227,8 +233,8 @@ variable "postgres" {
   })
   default = null
   validation {
-    condition     = var.postgres == null || contains(["B_Standard_B1ms", "B_Standard_B2s"], try(var.postgres.sku_name, ""))
-    error_message = "postgres.sku_name is B_Standard_B1ms (ADR 9, free-account grant) or B_Standard_B2s (ADR 12, production only after CPU alerts); a larger SKU needs an ADR"
+    condition     = var.postgres == null || contains(var.postgres_allowed_skus, try(var.postgres.sku_name, ""))
+    error_message = "postgres.sku_name is B_Standard_B1ms (ADR 9, free-account grant) unless the layer allows more through postgres_allowed_skus; a larger SKU needs an ADR"
   }
   validation {
     condition     = var.postgres == null || try(var.postgres.storage_mb, 0) == 32768

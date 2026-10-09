@@ -2,7 +2,7 @@
 """Delete guard for the production layer (plan 05, ADR 12).
 
 Reads `terraform show -json tfplan` on stdin and exits 1 when the plan deletes or replaces the PostgreSQL server,
-the storage account or the Key Vault (a replace carries both delete and create). Exits 2 when the input is not a
+the storage account, a storage container, a user-assigned identity or the Key Vault (a replace carries both delete and create). Exits 2 when the input is not a
 plan, so a broken pipe can never look like "nothing is deleted". Prints only the resource type and the action,
 never an address, name or ID: the log of this repository is public.
 """
@@ -13,6 +13,8 @@ GUARDED = (
     "azurerm_postgresql_flexible_server",
     "azurerm_storage_account",
     "azurerm_key_vault",
+    "azurerm_storage_container",  # losing the CV container deletes the CVs
+    "azurerm_user_assigned_identity",  # replacing the PostgreSQL Entra admin identity orphans the database roles
 )
 
 
@@ -36,7 +38,7 @@ def main() -> int:
     if hits:
         print("Refusing to apply. Data resources are never deleted by the pipeline; see docs/prod-bootstrap.md.")
         return 1
-    print("prod guard: no guarded data resource is deleted or replaced")
+    print("prod guard: no guarded guarded resource is deleted or replaced")
     return 0
 
 

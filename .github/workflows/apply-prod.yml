@@ -3,7 +3,7 @@
 # scripts/configure-github.sh, docs/prod-bootstrap.md): every run waits for the owner's approval before the job starts.
 # Nothing Terraform prints reaches this public log (scripts/tf-layer.sh, suppress mode).
 #
-# Order: plan, DELETE GUARD, MIGRATE, plan again, DELETE GUARD, apply, verify. The guard fails the run when a plan would
+# Order: configuration gate (strict check, digests proven on staging), plan, DELETE GUARD, MIGRATE, plan again, DELETE GUARD, apply, verify. The guard fails the run when a plan would
 # delete or replace the PostgreSQL server, the storage account or the Key Vault (scripts/prod-guard.py). The database
 # migrations run before the apps are updated (scripts/db-migrate.sh prod), under the same expand/contract rule as staging.
 name: Apply prod
@@ -78,6 +78,12 @@ jobs:
           if ! git -C config checkout -q --detach "$CONFIG_REF" > /dev/null 2>&1; then
             echo "::error::could not check out config_ref"; exit 1
           fi
+      # The promotion gate is enforced here: the configuration repository is private without a paid plan, so it cannot
+      # require a check on main. Fixed messages only; no digest or value reaches this public log.
+      - name: Production configuration gate
+        run: |
+          python3 -I config/scripts/check-prod-config.py --strict --root config
+          bash scripts/prod-provenance.sh config | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "~1.16"
@@ -105,13 +111,25 @@ jobs:
         run: |
           bash scripts/tf-layer.sh apply-plan prod
           bash scripts/tf-layer.sh summary prod >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+      # First deploy of an environment: the job does not exist yet. It is migrated after the apply, but only when this
+      # plan creates it (not so while apps_enabled is false: then the migration waits for the apply that enables the apps).
+      - name: Will this apply create the migration job
+        id: jobplan
+        if: steps.migrate.outputs.deferred == 'true'
+        run: |
+          if bash scripts/tf-layer.sh plan-has-migrate-job prod; then
+            echo "creates=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "creates=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::The migration job is not created by this apply (apps are not enabled yet): no migration ran."
+          fi
       - name: Delete guard (plan to apply)
         run: bash scripts/tf-layer.sh guard prod | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Apply
         run: bash scripts/tf-layer.sh apply prod
       # Only on the first deploy of an environment: the apply created the job, so the migration runs now.
       - name: Migrate the database (job created by this apply)
-        if: steps.migrate.outputs.deferred == 'true'
+        if: steps.jobplan.outputs.creates == 'true'
         run: bash scripts/db-migrate.sh prod run-only
       - name: Verify idempotency
         run: |
