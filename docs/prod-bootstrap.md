@@ -136,14 +136,14 @@ Owner inputs first (names only, values are public URLs):
 
 | Where | Name | Value |
 |---|---|---|
-| `Swiftjob-fe` repository variable | `PROD_API_URL` | `https://api.swiftjob.de` |
-| `Swiftjob-fe` repository variable | `PROD_WEB_URL` | `https://swiftjob.de` |
+| frontend repository variable | `PROD_API_URL` | `https://api.swiftjob.de` |
+| frontend repository variable | `PROD_WEB_URL` | `https://swiftjob.de` |
 | configuration repository, branch protection of `main` | required check `Promote gate` | set after the first promote pull request has run once |
 
 The Entra tenant and client ids are not build arguments: they are runtime settings from `prod/terraform.tfvars`.
 
 1. **Staging is proven.** The staging release is merged and `Apply staging` succeeded. The controller runs the
-   onboarding probe against staging for that commit (`PROBE=1`, `scripts/onboarding-probe.mjs` in `Swiftjob-fe`; it
+   onboarding probe against staging for that commit (`PROBE=1`, `scripts/onboarding-probe.mjs` in the frontend repository; it
    writes a local JSON report only, so the proof is the checkbox below).
 2. **Backend images (api, db, aggregator).** In the configuration repository, with the staging config commit that is on
    `main` and is what staging runs now:
@@ -158,7 +158,7 @@ The Entra tenant and client ids are not build arguments: they are runtime settin
 3. **Web image.** Dispatch the production build for the frontend commit staging proved:
 
    ```bash
-   gh workflow run image-prod.yml -R 314159DD/Swiftjob-fe --ref azure-migration -f commit_sha=<40 hex>
+   gh workflow run image-prod.yml -R <frontend repository> --ref azure-migration -f commit_sha=<40 hex>
    ```
 
    It builds with `PROD_API_URL` and `PROD_WEB_URL`, entra, no Supabase, no legacy link, pushes
