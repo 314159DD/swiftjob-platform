@@ -5,4 +5,6 @@ echo "STDOUT-PLAN-TEXT resource_name=vendor_api_key"
 echo "Error: bad value for secret_env in /subscriptions/11111111-2222-3333-4444-555555555555 owner a.person@example.com" >&2
 if [[ -n "${FAKE_TF_STDERR:-}" ]]; then printf '%s
 ' "$FAKE_TF_STDERR" >&2; fi
+# FAKE_TF_FAIL_ONCE=<marker file>: the first call fails (exit 1) and creates the marker, later calls use FAKE_TF_EXIT.
+if [[ -n "${FAKE_TF_FAIL_ONCE:-}" && ! -e "$FAKE_TF_FAIL_ONCE" ]]; then : > "$FAKE_TF_FAIL_ONCE"; exit 1; fi
 exit "${FAKE_TF_EXIT:-0}"
