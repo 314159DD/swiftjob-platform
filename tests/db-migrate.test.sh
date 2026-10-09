@@ -38,6 +38,7 @@ cat > "$tmp/tf-layer.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$TF_LOG"
 [[ "$1" == migrate-check && "${TF_CHECK_FAIL:-0}" == 1 ]] && exit 1
+[[ "$1" == guard && "${TF_GUARD_FAIL:-0}" == 1 ]] && exit 1
 exit 0
 STUB
 chmod +x "$tmp/bin/az" "$tmp/tf-layer.sh"
@@ -107,6 +108,12 @@ check "$rc" 1 "run-only fails when the job is still missing"
 
 ARGS="prod" run AZ_STATUSES="Succeeded"
 check "$(grep -c -- '-g rg-swiftjob-prod -n job-prod-db-migrate' "$AZ_LOG" | head -1)" "$(grep -c 'job' "$AZ_LOG" | head -1)" "prod uses its own job and resource group"
+ARGS="prod" run AZ_STATUSES="Succeeded"
+check "$(tr '\n' '|' < "$TF_LOG")" "migrate-plan prod|migrate-check prod|guard prod tfplan-db|migrate-apply prod|" "prod guards the targeted plan before it is applied"
+ARGS="prod" run AZ_STATUSES="Succeeded" TF_GUARD_FAIL=1
+check "$rc" 1 "a refused targeted plan fails the migration"
+check "$(tr '\n' '|' < "$TF_LOG")" "migrate-plan prod|migrate-check prod|guard prod tfplan-db|" "nothing is applied after the guard refuses"
+check "$(grep -c 'job start' "$AZ_LOG" || true)" 0 "nothing is started after the guard refuses"
 ARGS="dev" run AZ_STATUSES="Succeeded"
 check "$rc" 64 "unknown environments are refused"
 

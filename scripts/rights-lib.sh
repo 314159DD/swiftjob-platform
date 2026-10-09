@@ -27,7 +27,7 @@ grant_and_remove_allowed() {
     if [[ "${id,,}" != "${SELF,,}" ]]; then other=$id; break; fi
   done
   if [[ -z "$other" ]]; then echo "no other pipeline principal ID for the control (PIPELINE_PRINCIPAL_IDS)" >&2; return 1; fi
-  grant_to "$other" "Monitoring Metrics Publisher" "$STAGING_RG_ID" || return 1
+  grant_to "$other" "Monitoring Metrics Publisher" "${RIGHTS_CONTROL_RG_ID:-$STAGING_RG_ID}" || return 1
   assignment=$(tail -n 1 "$CREATED_LOG")
   if [[ -z "$assignment" ]]; then echo "the grant returned no assignment ID" >&2; return 1; fi
   az role assignment delete --only-show-errors --ids "$assignment" -o none

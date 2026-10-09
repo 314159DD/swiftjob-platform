@@ -60,6 +60,21 @@ EOF
   fi
   gh variable set AZURE_CLIENT_ID -R "$REPO" --env "$env" --body "$(val AZURE_CLIENT_ID_STAGING)"
 done
+# production (plan 05): only main, one required reviewer, the tf-prod identity. Skipped while the bootstrap output has no
+# AZURE_CLIENT_ID_PROD (bootstrap not yet re-run with the production identity). The workflow apply-prod.yml is
+# dispatch-only; this reviewer is what makes every production apply wait for the owner.
+if [[ -n "$(val AZURE_CLIENT_ID_PROD || true)" ]]; then
+  gh api -X PUT "repos/$REPO/environments/production" --input - > /dev/null <<EOF
+{"reviewers": [{"type": "User", "id": ${REVIEWER_ID}}],
+ "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+EOF
+  if [[ -z "$(gh api "repos/$REPO/environments/production/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "main") | .name')" ]]; then
+    gh api -X POST "repos/$REPO/environments/production/deployment-branch-policies" -f name=main -f type=branch > /dev/null
+  fi
+  gh variable set AZURE_CLIENT_ID -R "$REPO" --env production --body "$(val AZURE_CLIENT_ID_PROD)"
+else
+  echo "No AZURE_CLIENT_ID_PROD in $VALUES: the production environment is not configured."
+fi
 gh variable set AZURE_CLIENT_ID_PLAN -R "${CONFIG_REPO:-314159DD/swiftjob-platform-config}" --body "$(val AZURE_CLIENT_ID_PLAN)"
 
 # Not set here: the owner sets BUDGET_ALERT_EMAIL and LEAK_BLOCKLIST both as Actions secrets and as
