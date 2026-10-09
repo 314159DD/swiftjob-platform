@@ -6,6 +6,9 @@
 #   apply       applies tfplan with the state lock
 #   verify      second plan after an apply, exit 0 = no changes, 2 = changes
 #   summary     per-type summary of tfplan (scripts/plan_summary.py)
+#   migrate-plan   plan for the db-migrate job only (-target), with the state lock, writes tfplan-db
+#   migrate-apply  applies tfplan-db. scripts/db-migrate.sh uses both so the job runs the new image before the app update.
+#                  A plan written before this apply is stale afterwards: plan again (apply-plan) before the full apply.
 # Usage: bash scripts/tf-layer.sh <command> <platform|staging|nettest|identity-staging>
 set -euo pipefail
 cmd=${1:?command}
@@ -37,6 +40,9 @@ case "$layer" in
   *) echo "::error::unknown layer ${layer}"; exit 2 ;;
 esac
 
+# The one resource a migrate-first deploy changes ahead of the rest (same address in every workload layer).
+DB_JOB_TARGET='module.workload.azurerm_container_app_job.this["db"]'
+
 q() { local sub=$1; shift; bash "$root/scripts/tf-quiet.sh" "$mode" -chdir="$dir" "$sub" -no-color "$@"; }
 
 case "$cmd" in
@@ -47,6 +53,8 @@ case "$cmd" in
   plan)       TF_QUIET_OK_CODES="0 2" q plan -input=false -lock=false -detailed-exitcode -out=tfplan "${vars[@]}" ;;
   apply-plan) q plan -input=false -lock-timeout=5m -out=tfplan "${vars[@]}" ;;
   apply)      q apply -input=false -lock-timeout=5m tfplan ;;
+  migrate-plan)  q plan -input=false -lock-timeout=5m -target="$DB_JOB_TARGET" -out=tfplan-db "${vars[@]}" ;;
+  migrate-apply) q apply -input=false -lock-timeout=5m tfplan-db ;;
   verify)     TF_QUIET_OK_CODES="0 2" q plan -input=false -lock-timeout=5m -detailed-exitcode "${vars[@]}" ;;
   summary)    terraform -chdir="$dir" show -json tfplan 2> /dev/null | python3 "$root/scripts/plan_summary.py" ;;
   *) echo "::error::unknown command ${cmd}"; exit 2 ;;

@@ -51,6 +51,17 @@ rm "$tmp/config/staging/identity.auto.tfvars"
 rc=0; CONFIG_DIR="$tmp/config" bash "$script" plan identity-staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "missing identity configuration fails"
 
+# migrate-first: a targeted plan of the db-migrate job into its own plan file, then an apply of exactly that file
+: > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging > /dev/null 2>&1
+check "$(grep -c -- '-target=module.workload.azurerm_container_app_job.this\["db"\]' "$FAKE_TF_LOG")" 1 "migrate-plan targets the db-migrate job only"
+check "$(grep -c -- '-out=tfplan-db' "$FAKE_TF_LOG")" 1 "migrate-plan writes its own plan file"
+check "$(grep -c -- '-lock-timeout=5m' "$FAKE_TF_LOG")" 1 "migrate-plan takes the state lock"
+check "$(grep -c -- "-var-file=$tmp/config/staging/terraform.tfvars" "$FAKE_TF_LOG")" 1 "migrate-plan uses the private var file"
+: > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-apply staging > /dev/null 2>&1
+check "$(grep -c -- 'apply .* tfplan-db' "$FAKE_TF_LOG")" 1 "migrate-apply applies tfplan-db"
+rc=0; out=$(FAKE_TF_EXIT=1 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging 2>&1) || rc=$?
+check "$(grep -c 'bad value' <<< "$out" || true)" 0 "migrate-plan stays in suppress mode"
+
 # missing private configuration and unknown layer
 rc=0; CONFIG_DIR="$tmp/none" bash "$script" plan staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "missing private configuration fails"
