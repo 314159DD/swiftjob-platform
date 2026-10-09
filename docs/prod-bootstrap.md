@@ -120,7 +120,7 @@ az lock create --name keep-storage --lock-type CanNotDelete -g rg-swiftjob-prod 
 Secrets, typed at the prompt, nothing echoed (private configuration repository):
 
 ```bash
-bash scripts/load-secrets.sh --env prod
+bash scripts/load-secrets.sh prod <prod vault>
 az keyvault secret list --vault-name <prod vault> --query "[].name" -o tsv     # names only
 ```
 
