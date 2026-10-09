@@ -90,3 +90,22 @@ run "rejects_port" {
   variables { web_base_url = "https://web.example.test:8443" }
   expect_failures = [var.web_base_url]
 }
+
+run "extra_base_urls_add_redirect_uris" {
+  command = plan
+  variables {
+    extra_base_urls = ["https://rehearsal.example.test"]
+  }
+  assert {
+    condition     = length(azuread_application.web.web[0].redirect_uris) == 4
+    error_message = "each extra base URL adds the callback and the signed-out URI"
+  }
+}
+
+run "rejects_extra_base_url_with_path" {
+  command = plan
+  variables {
+    extra_base_urls = ["https://rehearsal.example.test/x"]
+  }
+  expect_failures = [var.extra_base_urls]
+}

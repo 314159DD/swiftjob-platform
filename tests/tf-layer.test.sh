@@ -51,6 +51,20 @@ rm "$tmp/config/staging/identity.auto.tfvars"
 rc=0; CONFIG_DIR="$tmp/config" bash "$script" plan identity-staging > /dev/null 2>&1 || rc=$?
 check "$rc" 2 "missing identity configuration fails"
 
+# prod: its own directory and config folder, suppress mode; identity-prod likewise
+mkdir -p "$tmp/config/prod"
+echo 'environment = "prod"' > "$tmp/config/prod/terraform.tfvars"
+: > "$FAKE_TF_LOG"; rc=0; out=$(FAKE_TF_EXIT=1 CONFIG_DIR="$tmp/config" bash "$script" plan prod 2>&1) || rc=$?
+check "$(grep -c -- "-chdir=$root/environments/prod " "$FAKE_TF_LOG")" 1 "prod plan runs in environments/prod"
+check "$(grep -c -- "-var-file=$tmp/config/prod/terraform.tfvars" "$FAKE_TF_LOG")" 1 "prod plan uses the prod var file"
+check "$(grep -c -- "config/staging" "$FAKE_TF_LOG" || true)" 0 "prod plan never reads the staging folder"
+check "$(grep -c 'bad value' <<< "$out" || true)" 0 "prod uses suppress mode"
+echo 'web_base_url = "https://x.example.test"' > "$tmp/config/prod/identity.auto.tfvars"
+: > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" plan identity-prod > /dev/null 2>&1 || true
+check "$(grep -c -- "-var-file=$tmp/config/prod/identity.auto.tfvars" "$FAKE_TF_LOG")" 1 "identity-prod uses the prod identity var file"
+rc=0; CONFIG_DIR="$tmp/none" bash "$script" plan prod > /dev/null 2>&1 || rc=$?
+check "$rc" 2 "prod without private configuration fails"
+
 # migrate-first: a targeted plan of the db-migrate job into its own plan file, then an apply of exactly that file
 : > "$FAKE_TF_LOG"; FAKE_TF_EXIT=0 CONFIG_DIR="$tmp/config" bash "$script" migrate-plan staging > /dev/null 2>&1
 check "$(grep -c -- '-target=module.workload.azurerm_container_app_job.this\["db-migrate"\]' "$FAKE_TF_LOG")" 1 "migrate-plan targets the db-migrate job only"

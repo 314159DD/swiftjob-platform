@@ -25,3 +25,13 @@ variable "owner_client_id" {
   description = "Client id of the apply identity (tf-identity-staging); it owns the registrations regardless of who runs the plan."
   type        = string
 }
+
+variable "extra_base_urls" {
+  description = "Further HTTPS base URLs of the web app that may sign in, for example the default host name used for a rehearsal before DNS moves. Same shape as web_base_url."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for u in var.extra_base_urls : can(regex("^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", u))])
+    error_message = "extra_base_urls must be https://host (lowercase, no path, port, user info or wildcard)."
+  }
+}

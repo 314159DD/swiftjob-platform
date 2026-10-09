@@ -1,0 +1,141 @@
+# Plans and applies the customer identity layer (app registrations in the external tenant) for production (plan 05). The apply job waits for the required reviewer of the production environment.
+# Dispatch only: a merge never changes the production identity layer.
+# Run by hand with a commit of the private configuration repository. Nothing Terraform prints reaches this public log
+# (scripts/tf-layer.sh, suppress mode). The provider signs in to the external tenant through a federated credential
+# (tf-identity-plan for the plan job, tf-identity-prod for the apply job); the state backend uses the workforce login.
+name: Identity (prod)
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_ref:
+        description: Commit of the private configuration repository (or main)
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: identity-prod
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_STATE_RG: ${{ vars.TF_STATE_RG }}
+  TF_STATE_SA: ${{ vars.TF_STATE_SA }}
+  CONFIG_REF: ${{ inputs.config_ref || 'main' }}
+
+jobs:
+  plan:
+    name: Plan identity (prod)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: plan
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_identity_role: plan
+    steps:
+      - name: Check the configuration reference
+        run: |
+          if [[ ! "$CONFIG_REF" =~ ^(main|[0-9a-f]{40})$ ]]; then echo "::error::config_ref must be main or a full commit SHA"; exit 1; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 314159DD/swiftjob-platform-config
+          ref: main
+          fetch-depth: 1000
+          ssh-key: ${{ secrets.CONFIG_REPO_DEPLOY_KEY }}
+          path: config
+          persist-credentials: false
+      - name: Pin the configuration commit
+        if: env.CONFIG_REF != 'main'
+        run: |
+          if ! git -C config merge-base --is-ancestor "$CONFIG_REF" origin/main > /dev/null 2>&1; then
+            echo "::error::config_ref is not on main"; exit 1
+          fi
+          if ! git -C config checkout -q --detach "$CONFIG_REF" > /dev/null 2>&1; then
+            echo "::error::could not check out config_ref"; exit 1
+          fi
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - name: Init
+        run: bash scripts/tf-layer.sh init identity-prod
+      - name: Plan
+        run: |
+          rc=0
+          bash scripts/tf-layer.sh plan identity-prod || rc=$?
+          if [[ "$rc" != 0 && "$rc" != 2 ]]; then exit "$rc"; fi
+          bash scripts/tf-layer.sh summary identity-prod >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+
+  apply:
+    name: Apply identity (prod)
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_identity_role: apply
+    steps:
+      - name: Check the configuration reference
+        run: |
+          if [[ ! "$CONFIG_REF" =~ ^(main|[0-9a-f]{40})$ ]]; then echo "::error::config_ref must be main or a full commit SHA"; exit 1; fi
+          echo "Configuration commit: ${CONFIG_REF}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 314159DD/swiftjob-platform-config
+          ref: main
+          fetch-depth: 1000
+          ssh-key: ${{ secrets.CONFIG_REPO_DEPLOY_KEY }}
+          path: config
+          persist-credentials: false
+      - name: Pin the configuration commit
+        if: env.CONFIG_REF != 'main'
+        run: |
+          if ! git -C config merge-base --is-ancestor "$CONFIG_REF" origin/main > /dev/null 2>&1; then
+            echo "::error::config_ref is not on main"; exit 1
+          fi
+          if ! git -C config checkout -q --detach "$CONFIG_REF" > /dev/null 2>&1; then
+            echo "::error::could not check out config_ref"; exit 1
+          fi
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - name: Init
+        run: bash scripts/tf-layer.sh init identity-prod
+      - name: Plan
+        run: |
+          bash scripts/tf-layer.sh apply-plan identity-prod
+          bash scripts/tf-layer.sh summary identity-prod >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+      - name: Apply
+        run: bash scripts/tf-layer.sh apply identity-prod
+      - name: Verify idempotency
+        run: |
+          rc=0
+          bash scripts/tf-layer.sh verify identity-prod || rc=$?
+          case "$rc" in
+            0) echo "Second plan: no changes" | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "::error::second plan still has changes"; exit 1 ;;
+            *) echo "::error::second plan failed"; exit 1 ;;
+          esac

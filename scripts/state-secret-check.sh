@@ -10,6 +10,7 @@ layer=${1:?usage: state-secret-check.sh <layer>}
 root="$(cd "$(dirname "$0")/.." && pwd)"
 case "$layer" in
   staging) dir="$root/environments/staging" ;;
+  prod) dir="$root/environments/prod" ;;
   *) echo "::error::state-secret-check.sh: unknown layer ${layer}" >&2; exit 2 ;;
 esac
 state=$(mktemp); trap 'rm -f "$state"' EXIT

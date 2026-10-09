@@ -76,7 +76,7 @@ resource "azuread_application" "web" {
   web {
     # The callback receives the auth code; /auth/signed-out is the post_logout_redirect_uri (Entra honours it only when
     # registered). It is a route handler that drops the query and redirects to /, so a code sent there is never shown.
-    redirect_uris = ["${var.web_base_url}/auth/callback", "${var.web_base_url}/auth/signed-out"]
+    redirect_uris = flatten([for base in concat([var.web_base_url], var.extra_base_urls) : ["${base}/auth/callback", "${base}/auth/signed-out"]])
     implicit_grant {
       access_token_issuance_enabled = false
       id_token_issuance_enabled     = false

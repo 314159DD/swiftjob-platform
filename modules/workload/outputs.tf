@@ -69,6 +69,21 @@ output "app_fqdns" {
   value       = local.app_fqdn
 }
 
+output "environment_static_ip" {
+  description = "Static inbound IP of the Container Apps environment: the target of the A record of an apex custom domain."
+  value       = azurerm_container_app_environment.this.static_ip_address
+}
+
+output "custom_domain_verification_id" {
+  description = "Value of the asuid TXT records that prove domain ownership for managed certificates (an identifier, not a credential)."
+  value       = azurerm_container_app_environment.this.custom_domain_verification_id
+}
+
+output "custom_domains" {
+  description = "Custom domains declared per app, whether or not they are created yet."
+  value       = { for k, a in var.apps : k => a.custom_domains if length(a.custom_domains) > 0 }
+}
+
 output "job_names" {
   description = "Container Apps Job resource names by key."
   value       = { for k, j in azurerm_container_app_job.this : k => j.name }

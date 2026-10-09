@@ -55,3 +55,29 @@ jobs:
           TF_STATE_SA: ${{ vars.TF_STATE_SA }}
           PIPELINE_PRINCIPAL_IDS: ${{ vars.PIPELINE_PRINCIPAL_IDS }}
           RIGHTS_TEST_USER_ID: ${{ vars.RIGHTS_TEST_USER_ID }}
+
+  # Production identity (plan 05). Runs only on a manual dispatch and only once the repository variable PROD_READY is
+  # "true" (set by the owner after the extended bootstrap). It never runs on the weekly schedule: the production
+  # environment has a required reviewer, so a scheduled run would wait for an approval nobody expects.
+  prod-identity:
+    name: tf-prod
+    if: github.event_name == 'workflow_dispatch' && vars.PROD_READY == 'true'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: bash scripts/rights-test.sh prod | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          TF_STATE_SA: ${{ vars.TF_STATE_SA }}
+          PIPELINE_PRINCIPAL_IDS: ${{ vars.PIPELINE_PRINCIPAL_IDS }}
+          RIGHTS_TEST_USER_ID: ${{ vars.RIGHTS_TEST_USER_ID }}

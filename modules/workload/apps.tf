@@ -114,3 +114,24 @@ resource "azurerm_container_app" "this" {
 
   depends_on = [time_sleep.role_propagation]
 }
+
+# Custom domains with Azure managed certificates (ADR 12). Omitting container_app_environment_certificate_id asks
+# Azure for a managed certificate (azurerm 5.8 resource docs). Azure validates the domain over HTTP (apex) or CNAME
+# (subdomain), so the DNS records must already point at Azure when this is created, and the asuid TXT record must exist:
+# that is why enable_custom_domains defaults to false. Azure sets the binding and certificate afterwards, outside
+# Terraform, hence ignore_changes.
+locals {
+  custom_domains = var.enable_custom_domains && var.apps_enabled ? merge([
+    for k, a in var.apps : { for d in a.custom_domains : "${k}/${d}" => { app = k, domain = d } }
+  ]...) : {}
+}
+
+resource "azurerm_container_app_custom_domain" "this" {
+  for_each         = local.custom_domains
+  name             = each.value.domain
+  container_app_id = azurerm_container_app.this[each.value.app].id
+
+  lifecycle {
+    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
+  }
+}

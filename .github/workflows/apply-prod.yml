@@ -1,0 +1,137 @@
+# Applies the production layer with tf-prod. WORKFLOW_DISPATCH ONLY: no push, schedule or pull_request trigger, so a merge
+# can never change production. The GitHub environment "production" has a required reviewer (set by
+# scripts/configure-github.sh, docs/prod-bootstrap.md): every run waits for the owner's approval before the job starts.
+# Nothing Terraform prints reaches this public log (scripts/tf-layer.sh, suppress mode).
+#
+# Order: plan, DELETE GUARD, MIGRATE, plan again, DELETE GUARD, apply, verify. The guard fails the run when a plan would
+# delete or replace the PostgreSQL server, the storage account or the Key Vault (scripts/prod-guard.py). The database
+# migrations run before the apps are updated (scripts/db-migrate.sh prod), under the same expand/contract rule as staging.
+name: Apply prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_ref:
+        description: Commit of the private configuration repository (full SHA, or main)
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: apply-prod
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply prod
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+      TF_STATE_RG: ${{ vars.TF_STATE_RG }}
+      TF_STATE_SA: ${{ vars.TF_STATE_SA }}
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+      CONFIG_REF: ${{ inputs.config_ref || 'main' }}
+    steps:
+      - name: Check the reference and the branch
+        run: |
+          # The environment also allows main only; this fails early with a clear message.
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then echo "::error::production is applied from main only"; exit 1; fi
+          if [[ ! "$CONFIG_REF" =~ ^(main|[0-9a-f]{40})$ ]]; then echo "::error::config_ref must be main or a full commit SHA"; exit 1; fi
+          echo "Configuration commit: ${CONFIG_REF}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 314159DD/swiftjob-platform-config
+          ref: main
+          # A non-zero depth fetches only main. fetch-depth 0 would fetch and log every branch name of the private repository.
+          # The ancestry check below therefore fails closed for a commit older than the newest 1000 on main.
+          fetch-depth: 1000
+          ssh-key: ${{ secrets.CONFIG_REPO_DEPLOY_KEY }}
+          path: config
+          persist-credentials: false
+      - name: Pin the configuration commit
+        if: env.CONFIG_REF != 'main'
+        run: |
+          # Check out main first, then move to the commit quietly: checking out a SHA directly logs its (private) commit subject.
+          # Only commits that are already on main can be deployed (review there is by convention, main takes direct pushes).
+          if ! git -C config merge-base --is-ancestor "$CONFIG_REF" origin/main > /dev/null 2>&1; then
+            echo "::error::config_ref is not on main"; exit 1
+          fi
+          if ! git -C config checkout -q --detach "$CONFIG_REF" > /dev/null 2>&1; then
+            echo "::error::could not check out config_ref"; exit 1
+          fi
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - name: Init
+        run: bash scripts/tf-layer.sh init prod
+      - name: Plan
+        run: |
+          bash scripts/tf-layer.sh apply-plan prod
+          bash scripts/tf-layer.sh summary prod >> "$GITHUB_STEP_SUMMARY" || echo "::warning::plan summary unavailable"
+      - name: Delete guard (plan)
+        run: bash scripts/tf-layer.sh guard prod | tee -a "$GITHUB_STEP_SUMMARY"
+      # The OIDC token of the Terraform sign-in can expire during a long run; the migration signs in on its own.
+      - name: Sign in for the migration
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Updates only the db-migrate job to the new image, runs it and waits. Fails the workflow unless it succeeded.
+      - name: Migrate the database (before the app update)
+        id: migrate
+        run: bash scripts/db-migrate.sh prod
+      # The targeted apply changed the state, so the plan above is stale. The full plan is made again from the new state.
+      - name: Plan again after the migration
+        run: bash scripts/tf-layer.sh apply-plan prod
+      - name: Delete guard (plan to apply)
+        run: bash scripts/tf-layer.sh guard prod | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Apply
+        run: bash scripts/tf-layer.sh apply prod
+      # Only on the first deploy of an environment: the apply created the job, so the migration runs now.
+      - name: Migrate the database (job created by this apply)
+        if: steps.migrate.outputs.deferred == 'true'
+        run: bash scripts/db-migrate.sh prod run-only
+      - name: Verify idempotency
+        run: |
+          rc=0
+          bash scripts/tf-layer.sh verify prod || rc=$?
+          case "$rc" in
+            0) echo "Second plan: no changes" | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "::error::second plan still has changes"; exit 1 ;;
+            *) echo "::error::second plan failed"; exit 1 ;;
+          esac
+      - name: Check the state holds no secret values
+        run: bash scripts/state-secret-check.sh prod | tee -a "$GITHUB_STEP_SUMMARY"
+      # The OIDC token of the first sign-in can expire during a long apply; sign in again.
+      - name: Sign in for the smoke test
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Smoke test
+        env:
+          SMOKE_RG: rg-swiftjob-prod
+          SMOKE_APP_PREFIX: ca-swiftjob-prod
+        run: bash scripts/smoke-staging.sh | tee -a "$GITHUB_STEP_SUMMARY"
