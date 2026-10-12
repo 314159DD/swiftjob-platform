@@ -91,8 +91,16 @@ variable "apps" {
     health_path  = optional(string)
     env          = optional(map(string), {})
     secret_env   = optional(map(string), {})
+    # Host names bound with managed certificates once enable_custom_domains is true (ADR 12).
+    custom_domains = optional(list(string), [])
   }))
   default = {}
+}
+
+variable "enable_custom_domains" {
+  description = "Create the custom domains and managed certificates of apps.*.custom_domains. false until the DNS records point at this environment: Azure issues a certificate only after that (ADR 12)."
+  type        = bool
+  default     = false
 }
 
 variable "jobs" {

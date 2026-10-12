@@ -33,3 +33,9 @@ variable "admin_role_id" {
 variable "scope_id" {
   type = string
 }
+
+variable "extra_base_urls" {
+  description = "Further base URLs of the web app that may sign in (redirect URIs), for example a custom domain added before DNS moves to it."
+  type        = list(string)
+  default     = []
+}
