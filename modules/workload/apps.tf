@@ -79,13 +79,17 @@ resource "azurerm_container_app" "this" {
       }
       dynamic "startup_probe" {
         for_each = each.value.health_path == null ? [] : [each.value.health_path]
+        # A replica gets traffic only after its first passing check, so the delay and interval are dead time on every
+        # cold start: with 30 s / 10 s the owner's onboarding upload waited 38 s on staging (2026-10-12, gunicorn up
+        # at 23:52:42, first check 23:53:11, healthy at once). The app answers within a few seconds of its start
+        # (gunicorn binds at once, create_app about 4 s), so check early and often: 2 + 10 x 4 = 42 s window.
         content {
           transport               = "HTTP"
           port                    = each.value.port
           path                    = startup_probe.value
-          initial_delay           = 30
-          interval_seconds        = 10
-          failure_count_threshold = 10 # provider maximum; about 130 seconds for a cold start
+          initial_delay           = 2
+          interval_seconds        = 4
+          failure_count_threshold = 10 # provider maximum
         }
       }
       dynamic "liveness_probe" {
