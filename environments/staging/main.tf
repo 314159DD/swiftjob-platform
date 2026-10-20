@@ -20,6 +20,7 @@ module "workload" {
   registry                   = var.registry
   secrets                    = var.secrets
   apps                       = var.apps
+  enable_custom_domains      = var.enable_custom_domains
   jobs                       = var.jobs
   alerts                     = var.alerts
   postgres                   = var.postgres
